@@ -1,0 +1,91 @@
+{
+  "planPath": "docs/superpowers/plans/2026-08-27-fhir-ontology-security-performance.md",
+  "tasks": [
+    {
+      "id": 1,
+      "subject": "Task 1: Close no-auth on FindValueSetService",
+      "status": "pending",
+      "description": "**Goal:** Stop anonymous users reaching the terminology proxy, which currently acts as a public gateway into the internal Snowstorm network and an anonymous DoS vector.\n\n**Files:**\n- Modify: `config.json:167-169`\n\n**Acceptance Criteria:**\n- [ ] The `no-auth-pages` block is removed from `config.json`\n- [ ] `config.json` remains valid JSON\n- [ ] Online Designer search, Select, and Show Details still function\n- [ ] Requesting the endpoint with `&NOAUTH` appended no longer returns ValueSet JSON\n\n**Verify:** `python3 -c \"import json;json.load(open('config.json'));print('valid')\"` → prints `valid`\n\n```json:metadata\n{\"files\": [\"config.json\"], \"verifyCommand\": \"python3 -c \\\"import json;json.load(open('config.json'));print('valid')\\\"\", \"acceptanceCriteria\": [\"no-auth-pages block removed\", \"config.json valid JSON\", \"designer search/Select/Show Details still work\", \"NOAUTH request no longer returns ValueSet JSON\"], \"modelTier\": \"mechanical\", \"finding\": \"S1\", \"priority\": \"P0\", \"tranche\": \"v0.5.1\"}\n```"
+    },
+    {
+      "id": 2,
+      "subject": "Task 2: Add configurable FHIR timeout",
+      "status": "pending",
+      "description": "**Goal:** Bound how long a web server process waits on Snowstorm, so a restart or reindex cannot exhaust the PHP-FPM worker pool and take all of REDCap offline.\n\n**Files:**\n- Modify: `config.json` (new `fhir_timeout` setting after `fhir_api_url_info`)\n- Modify: `FhirOntologyAutocompleteExternalModule.php` (class constants, new `getFhirTimeout()`, `httpGet`, `httpPost`)\n\n**Acceptance Criteria:**\n- [ ] `fhir_timeout` system setting exists with default `10`\n- [ ] `getFhirTimeout()` returns the setting when numeric and > 0, else `DEFAULT_TIMEOUT`\n- [ ] Timeout is threaded into all four outbound paths: `http_get` curl, `http_get` stream fallback, both `http_post` curl calls, `http_post` stream fallback\n- [ ] `config.json` valid; `php -l` clean\n\n**Verify:** `php -l FhirOntologyAutocompleteExternalModule.php && python3 -c \"import json;json.load(open('config.json'));print('valid')\"` → `No syntax errors detected` then `valid`\n\n```json:metadata\n{\"files\": [\"config.json\", \"FhirOntologyAutocompleteExternalModule.php\"], \"verifyCommand\": \"php -l FhirOntologyAutocompleteExternalModule.php && python3 -c \\\"import json;json.load(open('config.json'));print('valid')\\\"\", \"acceptanceCriteria\": [\"fhir_timeout setting with default 10\", \"getFhirTimeout falls back to DEFAULT_TIMEOUT when blank/invalid\", \"all four outbound paths bounded\", \"php -l clean and config.json valid\"], \"modelTier\": \"standard\", \"finding\": \"P1a\", \"priority\": \"P0\", \"tranche\": \"v0.5.1\"}\n```",
+      "blockedBy": [
+        1
+      ]
+    },
+    {
+      "id": 3,
+      "subject": "Task 3: Add FHIR circuit breaker",
+      "status": "pending",
+      "description": "**Goal:** Convert a multi-minute site-wide REDCap outage during routine Snowstorm restarts into degraded autocomplete on one field type.\n\n**Files:**\n- Modify: `FhirOntologyAutocompleteExternalModule.php` (constants, three new breaker methods, integration at `searchOntology`, `findValueSet`, `getValueSetInfo`)\n\n**Acceptance Criteria:**\n- [ ] `BREAKER_FAILURE_THRESHOLD = 3` and `BREAKER_OPEN_SECONDS = 60` constants exist\n- [ ] `isCircuitOpen()`, `recordFhirFailure()`, `recordFhirSuccess()` implemented\n- [ ] Breaker integrated at exactly the three FHIR entry points, NOT inside `httpGet`/`httpPost` and NOT around token negotiation\n- [ ] A healthy server performs zero `setSystemSetting` writes\n- [ ] `getValueSetInfo()` returns `false` on failure so the service layer can emit a 502\n- [ ] `php -l` clean\n\n**Verify:** `php -l FhirOntologyAutocompleteExternalModule.php` → `No syntax errors detected`\n\n```json:metadata\n{\"files\": [\"FhirOntologyAutocompleteExternalModule.php\"], \"verifyCommand\": \"php -l FhirOntologyAutocompleteExternalModule.php\", \"acceptanceCriteria\": [\"threshold and window constants present\", \"three breaker methods implemented\", \"integrated at 3 FHIR entry points only, not http helpers or token negotiation\", \"zero setSystemSetting writes on healthy path\", \"getValueSetInfo returns false on failure\", \"php -l clean\"], \"modelTier\": \"standard\", \"finding\": \"P1b\", \"priority\": \"P0\", \"tranche\": \"v0.5.1\"}\n```",
+      "blockedBy": [
+        2
+      ]
+    },
+    {
+      "id": 4,
+      "subject": "Task 4: Fix per-keystroke dictionary load",
+      "status": "pending",
+      "description": "**Goal:** Eliminate a full `REDCap::getDataDictionary()` call on every autocomplete keystroke, currently incurred even by projects that never use `@HIDECHOICE`.\n\n**Files:**\n- Modify: `FhirOntologyAutocompleteExternalModule.php` (`getHideChoice`, ~lines 295-315)\n\n**Acceptance Criteria:**\n- [ ] `global $Proj;` declared so the in-memory fast path can actually execute\n- [ ] `static` per-request cache keyed `pid|field`\n- [ ] `$annotations` initialised to `null` before the branches\n- [ ] Dictionary result guarded with `isset()` before indexing\n- [ ] `@HIDECHOICE` regex parsing logic byte-for-byte unchanged\n- [ ] No `??` operator used\n- [ ] `php -l` clean\n\n**Verify:** `php -l FhirOntologyAutocompleteExternalModule.php` → `No syntax errors detected`\n\n```json:metadata\n{\"files\": [\"FhirOntologyAutocompleteExternalModule.php\"], \"verifyCommand\": \"php -l FhirOntologyAutocompleteExternalModule.php\", \"acceptanceCriteria\": [\"global $Proj declared\", \"static per-request cache keyed pid|field\", \"annotations initialised to null\", \"isset guard on dictionary result\", \"HIDECHOICE parsing unchanged\", \"no ?? operator\", \"php -l clean\"], \"modelTier\": \"standard\", \"finding\": \"P2\", \"priority\": \"P0\", \"tranche\": \"v0.5.1\"}\n```",
+      "blockedBy": [
+        3
+      ]
+    },
+    {
+      "id": 5,
+      "subject": "Task 5: Fix OAuth2 token expiry arithmetic",
+      "status": "pending",
+      "description": "**Goal:** Disarm a latent bug that goes live the moment `authentication_type` switches from `basic` to `cc`.\n\n**Files:**\n- Modify: `FhirOntologyAutocompleteExternalModule.php` (`getClientCredentialsToken`, ~lines 905-935)\n\n**Acceptance Criteria:**\n- [ ] `* 1000` removed from both the `expires_in` path and the fallback\n- [ ] Expiry rule implemented exactly as: `margin = min(60, floor(lifetime / 2))`, expiry = `now + lifetime - margin`\n- [ ] Absent `expires_in` uses an assumed 3600s lifetime under the same rule\n- [ ] `json_decode` result guarded with `is_array()` before any `array_key_exists`\n- [ ] `$_SESSION` remains the storage mechanism — relocation is explicitly deferred\n- [ ] `php -l` clean\n\n**Verify:** `php -l FhirOntologyAutocompleteExternalModule.php && grep -c '\\* 1000' FhirOntologyAutocompleteExternalModule.php` → `No syntax errors detected` then `0`\n\n```json:metadata\n{\"files\": [\"FhirOntologyAutocompleteExternalModule.php\"], \"verifyCommand\": \"php -l FhirOntologyAutocompleteExternalModule.php && grep -c '\\\\* 1000' FhirOntologyAutocompleteExternalModule.php\", \"acceptanceCriteria\": [\"both * 1000 removed\", \"margin = min(60, floor(lifetime/2))\", \"absent expires_in uses 3600s under same rule\", \"is_array guard before array_key_exists\", \"$_SESSION storage untouched\", \"php -l clean\"], \"modelTier\": \"mechanical\", \"finding\": \"P3\", \"priority\": \"P0\", \"tranche\": \"v0.5.1\", \"outOfScope\": \"session-to-server-wide token storage relocation\"}\n```",
+      "blockedBy": [
+        4
+      ]
+    },
+    {
+      "id": 6,
+      "subject": "Task 6: Null-safe parsing + unknown actions",
+      "status": "pending",
+      "description": "**Goal:** Stop a log flood during exactly the outages Task 3 handles, and stop unauthenticated callers triggering PHP warnings and pointless upstream calls.\n\n**Files:**\n- Modify: `FhirOntologyAutocompleteExternalModule.php` (`searchOntology` parsing block)\n- Modify: `FindValueSetService.php` (action dispatch and the info branch)\n\n**Acceptance Criteria:**\n- [ ] `$list['expansion']` is never read before the `is_array()` guard\n- [ ] `code`, `system`, `display` accessed via `isset()` ternaries, no `??`\n- [ ] Entries with no `code` are skipped rather than producing a bare `|system` value\n- [ ] An action that is neither `find` nor `info` returns a 400\n- [ ] A `false` from `getValueSetInfo()` surfaces as a 502 carrying an `OperationOutcome`\n- [ ] `php -l` clean on both files\n\n**Verify:** `php -l FhirOntologyAutocompleteExternalModule.php && php -l FindValueSetService.php` → `No syntax errors detected` twice\n\n```json:metadata\n{\"files\": [\"FhirOntologyAutocompleteExternalModule.php\", \"FindValueSetService.php\"], \"verifyCommand\": \"php -l FhirOntologyAutocompleteExternalModule.php && php -l FindValueSetService.php\", \"acceptanceCriteria\": [\"expansion offset inside is_array guard\", \"isset ternaries not ??\", \"codeless entries skipped\", \"unknown action returns 400\", \"getValueSetInfo false surfaces as 502 OperationOutcome\", \"php -l clean on both files\"], \"modelTier\": \"mechanical\", \"finding\": \"P5,S5\", \"priority\": \"P2\", \"tranche\": \"v0.5.1\"}\n```",
+      "blockedBy": [
+        5,
+        3
+      ]
+    },
+    {
+      "id": 7,
+      "subject": "Task 7: Escape Show Details dialog output",
+      "status": "pending",
+      "description": "**Goal:** Close a stored XSS path that escalates from project designer to admin.\n\n**Files:**\n- Modify: `FhirOntologyAutocompleteExternalModule.php` (`getOnlineDesignerSection` JS, success and error handlers)\n\n**Acceptance Criteria:**\n- [ ] Success path builds rows via DOM/`.text()`, with no HTML concatenation of `v.display`/`v.code`/`v.system`\n- [ ] Error path builds its cell via `createTextNode`, with no concatenation of `issue.diagnostics`\n- [ ] Line breaks between issues preserved using appended `<br>` elements\n- [ ] The already-safe `.text()` calls above (url/name/version/status/count) are left untouched\n- [ ] `php -l` clean\n\n**Verify:** `php -l FhirOntologyAutocompleteExternalModule.php` → `No syntax errors detected`\n\n```json:metadata\n{\"files\": [\"FhirOntologyAutocompleteExternalModule.php\"], \"verifyCommand\": \"php -l FhirOntologyAutocompleteExternalModule.php\", \"acceptanceCriteria\": [\"success path uses DOM/.text()\", \"error path uses createTextNode\", \"br separators preserved\", \"existing .text() calls untouched\", \"php -l clean\"], \"modelTier\": \"standard\", \"finding\": \"S2\", \"priority\": \"P1\", \"tranche\": \"v0.5.1\"}\n```",
+      "blockedBy": [
+        6
+      ]
+    },
+    {
+      "id": 9,
+      "subject": "Task 9: Document and prepare v0.5.1",
+      "status": "pending",
+      "description": "**Goal:** Record the shipped changes in the README's existing per-version style and state the deployment and rollback path.\n\n**Files:**\n- Modify: `README.md`\n\n**Acceptance Criteria:**\n- [ ] A `### Version 0.5.1 changes` section exists, matching the formatting of the existing 0.5 section\n- [ ] The new `FHIR request timeout (seconds)` setting is documented in the site-wide settings list\n- [ ] Circuit breaker behaviour is documented so an admin seeing 60s of dead autocomplete understands why\n- [ ] Deployment-as-new-directory and the rollback path are stated\n- [ ] It is stated explicitly that credential masking (S3) is NOT in this release\n\n**Verify:** `grep -c 'Version 0.5.1 changes' README.md && grep -c 'fhir_timeout\\|FHIR request timeout' README.md` → both ≥ 1\n\n```json:metadata\n{\"files\": [\"README.md\"], \"verifyCommand\": \"grep -c 'Version 0.5.1 changes' README.md && grep -c 'FHIR request timeout' README.md\", \"acceptanceCriteria\": [\"0.5.1 changelog section matching existing style\", \"fhir_timeout setting documented\", \"breaker behaviour documented for admins\", \"deploy-as-new-directory and rollback stated\", \"deferred items not claimed as done\"], \"modelTier\": \"mechanical\", \"finding\": \"docs\", \"priority\": \"P2\", \"tranche\": \"v0.5.1\"}\n```",
+      "blockedBy": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ]
+    },
+    {
+      "id": 8,
+      "subject": "Task 8: Mask credential settings",
+      "status": "pending",
+      "description": "**Goal:** Stop the Basic Auth password and OAuth2 client secret rendering in cleartext in the module config UI and sitting plaintext in `redcap_external_module_settings`.\n\n> **USER-ORDERED GATE — NON-SKIPPABLE.** This task was requested by the user in the current conversation. It MUST NOT be closed by walking around it, by declaring it \"verified inline\", or by substituting a cheaper check. Close only after every item in `acceptanceCriteria` has been re-validated independently, with output captured.\n\n> **USER-ORDERED GATE — NON-SKIPPABLE.** This task was requested by the user in the current conversation. It MUST NOT be closed by walking around it, by declaring it \"verified inline\", or by substituting a cheaper check. Close only after every item in `acceptanceCriteria` has been re-validated independently, with output captured.\n\n**Files:**\n- Modify: `config.json` (`cc_client_secret`, `basic_user_password`)\n\n**Acceptance Criteria:**\n- [ ] `\"type\": \"password\"` support under `framework-version: 1` is CONFIRMED before any edit is made\n- [ ] Both settings changed from `\"type\": \"text\"` to `\"type\": \"password\"`\n- [ ] `config.json` remains valid JSON\n- [ ] Committed separately from Tasks 1-7 and 9, as its own deployable tranche\n- [ ] After deployment, both fields render masked in the module system settings UI\n- [ ] After re-entering the Basic Auth password, ontology lookups still return results\n\n**Verify:** `python3 -c \"import json;d=json.load(open('config.json'));print([s['type'] for s in d['system-settings'] if s['key'] in ('cc_client_secret','basic_user_password')])\"` → `['password', 'password']`\n\n```json:metadata\n{\"files\": [\"config.json\"], \"verifyCommand\": \"python3 -c \\\"import json;d=json.load(open('config.json'));print([s['type'] for s in d['system-settings'] if s['key'] in ('cc_client_secret','basic_user_password')])\\\"\", \"acceptanceCriteria\": [\"framework v1 password-type support confirmed BEFORE editing\", \"both settings changed to type password\", \"config.json valid JSON\", \"committed separately as its own tranche\", \"both fields render masked in the settings UI\", \"lookups still work after re-entering the password\"], \"modelTier\": \"mechanical\", \"finding\": \"S3\", \"priority\": \"P3\", \"tranche\": \"v0.5.2\", \"userGate\": true, \"tags\": [\"user-gate\"], \"gateScope\": \"task\", \"failurePolicy\": \"stop-and-report\", \"requireEvidenceTokens\": [[\"masked\", \"password-type\", \"not-cleartext\"], [\"lookup-works\", \"re-entered\", \"autocomplete-returns-results\"]]}\n```",
+      "blockedBy": [
+        9
+      ]
+    }
+  ],
+  "lastUpdated": "2026-08-27T14:58:35.553925"
+}
