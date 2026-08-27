@@ -4,13 +4,13 @@
     {
       "id": 1,
       "subject": "Task 1: Close no-auth on FindValueSetService",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** Stop anonymous users reaching the terminology proxy, which currently acts as a public gateway into the internal Snowstorm network and an anonymous DoS vector.\n\n**Files:**\n- Modify: `config.json:167-169`\n\n**Acceptance Criteria:**\n- [ ] The `no-auth-pages` block is removed from `config.json`\n- [ ] `config.json` remains valid JSON\n- [ ] Online Designer search, Select, and Show Details still function\n- [ ] Requesting the endpoint with `&NOAUTH` appended no longer returns ValueSet JSON\n\n**Verify:** `python3 -c \"import json;json.load(open('config.json'));print('valid')\"` → prints `valid`\n\n```json:metadata\n{\"files\": [\"config.json\"], \"verifyCommand\": \"python3 -c \\\"import json;json.load(open('config.json'));print('valid')\\\"\", \"acceptanceCriteria\": [\"no-auth-pages block removed\", \"config.json valid JSON\", \"designer search/Select/Show Details still work\", \"NOAUTH request no longer returns ValueSet JSON\"], \"modelTier\": \"mechanical\", \"finding\": \"S1\", \"priority\": \"P0\", \"tranche\": \"v0.5.1\"}\n```"
     },
     {
       "id": 2,
       "subject": "Task 2: Add configurable FHIR timeout",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** Bound how long a web server process waits on Snowstorm, so a restart or reindex cannot exhaust the PHP-FPM worker pool and take all of REDCap offline.\n\n**Files:**\n- Modify: `config.json` (new `fhir_timeout` setting after `fhir_api_url_info`)\n- Modify: `FhirOntologyAutocompleteExternalModule.php` (class constants, new `getFhirTimeout()`, `httpGet`, `httpPost`)\n\n**Acceptance Criteria:**\n- [ ] `fhir_timeout` system setting exists with default `10`\n- [ ] `getFhirTimeout()` returns the setting when numeric and > 0, else `DEFAULT_TIMEOUT`\n- [ ] Timeout is threaded into all four outbound paths: `http_get` curl, `http_get` stream fallback, both `http_post` curl calls, `http_post` stream fallback\n- [ ] `config.json` valid; `php -l` clean\n\n**Verify:** `php -l FhirOntologyAutocompleteExternalModule.php && python3 -c \"import json;json.load(open('config.json'));print('valid')\"` → `No syntax errors detected` then `valid`\n\n```json:metadata\n{\"files\": [\"config.json\", \"FhirOntologyAutocompleteExternalModule.php\"], \"verifyCommand\": \"php -l FhirOntologyAutocompleteExternalModule.php && python3 -c \\\"import json;json.load(open('config.json'));print('valid')\\\"\", \"acceptanceCriteria\": [\"fhir_timeout setting with default 10\", \"getFhirTimeout falls back to DEFAULT_TIMEOUT when blank/invalid\", \"all four outbound paths bounded\", \"php -l clean and config.json valid\"], \"modelTier\": \"standard\", \"finding\": \"P1a\", \"priority\": \"P0\", \"tranche\": \"v0.5.1\"}\n```",
       "blockedBy": [
         1
@@ -87,5 +87,5 @@
       ]
     }
   ],
-  "lastUpdated": "2026-08-27T14:58:35.553925"
+  "lastUpdated": "2026-08-27T15:08:42.725611"
 }
