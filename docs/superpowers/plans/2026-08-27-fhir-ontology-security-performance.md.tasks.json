@@ -56,7 +56,7 @@
     {
       "id": 7,
       "subject": "Task 7: Escape Show Details dialog output",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** Close a stored XSS path that escalates from project designer to admin.\n\n**Files:**\n- Modify: `FhirOntologyAutocompleteExternalModule.php` (`getOnlineDesignerSection` JS, success and error handlers)\n\n**Acceptance Criteria:**\n- [ ] Success path builds rows via DOM/`.text()`, with no HTML concatenation of `v.display`/`v.code`/`v.system`\n- [ ] Error path builds its cell via `createTextNode`, with no concatenation of `issue.diagnostics`\n- [ ] Line breaks between issues preserved using appended `<br>` elements\n- [ ] The already-safe `.text()` calls above (url/name/version/status/count) are left untouched\n- [ ] `php -l` clean\n\n**Verify:** `php -l FhirOntologyAutocompleteExternalModule.php` → `No syntax errors detected`\n\n```json:metadata\n{\"files\": [\"FhirOntologyAutocompleteExternalModule.php\"], \"verifyCommand\": \"php -l FhirOntologyAutocompleteExternalModule.php\", \"acceptanceCriteria\": [\"success path uses DOM/.text()\", \"error path uses createTextNode\", \"br separators preserved\", \"existing .text() calls untouched\", \"php -l clean\"], \"modelTier\": \"standard\", \"finding\": \"S2\", \"priority\": \"P1\", \"tranche\": \"v0.5.1\"}\n```",
       "blockedBy": [
         6
@@ -87,5 +87,5 @@
       ]
     }
   ],
-  "lastUpdated": "2026-08-27T15:26:33.473999"
+  "lastUpdated": "2026-08-27T15:31:08.117308"
 }
