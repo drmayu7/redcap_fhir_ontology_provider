@@ -19,7 +19,7 @@
     {
       "id": 3,
       "subject": "Task 3: Add FHIR circuit breaker",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** Convert a multi-minute site-wide REDCap outage during routine Snowstorm restarts into degraded autocomplete on one field type.\n\n**Files:**\n- Modify: `FhirOntologyAutocompleteExternalModule.php` (constants, three new breaker methods, integration at `searchOntology`, `findValueSet`, `getValueSetInfo`)\n\n**Acceptance Criteria:**\n- [ ] `BREAKER_FAILURE_THRESHOLD = 3` and `BREAKER_OPEN_SECONDS = 60` constants exist\n- [ ] `isCircuitOpen()`, `recordFhirFailure()`, `recordFhirSuccess()` implemented\n- [ ] Breaker integrated at exactly the three FHIR entry points, NOT inside `httpGet`/`httpPost` and NOT around token negotiation\n- [ ] A healthy server performs zero `setSystemSetting` writes\n- [ ] `getValueSetInfo()` returns `false` on failure so the service layer can emit a 502\n- [ ] `php -l` clean\n\n**Verify:** `php -l FhirOntologyAutocompleteExternalModule.php` → `No syntax errors detected`\n\n```json:metadata\n{\"files\": [\"FhirOntologyAutocompleteExternalModule.php\"], \"verifyCommand\": \"php -l FhirOntologyAutocompleteExternalModule.php\", \"acceptanceCriteria\": [\"threshold and window constants present\", \"three breaker methods implemented\", \"integrated at 3 FHIR entry points only, not http helpers or token negotiation\", \"zero setSystemSetting writes on healthy path\", \"getValueSetInfo returns false on failure\", \"php -l clean\"], \"modelTier\": \"standard\", \"finding\": \"P1b\", \"priority\": \"P0\", \"tranche\": \"v0.5.1\"}\n```",
       "blockedBy": [
         2
@@ -28,7 +28,7 @@
     {
       "id": 4,
       "subject": "Task 4: Fix per-keystroke dictionary load",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** Eliminate a full `REDCap::getDataDictionary()` call on every autocomplete keystroke, currently incurred even by projects that never use `@HIDECHOICE`.\n\n**Files:**\n- Modify: `FhirOntologyAutocompleteExternalModule.php` (`getHideChoice`, ~lines 295-315)\n\n**Acceptance Criteria:**\n- [ ] `global $Proj;` declared so the in-memory fast path can actually execute\n- [ ] `static` per-request cache keyed `pid|field`\n- [ ] `$annotations` initialised to `null` before the branches\n- [ ] Dictionary result guarded with `isset()` before indexing\n- [ ] `@HIDECHOICE` regex parsing logic byte-for-byte unchanged\n- [ ] No `??` operator used\n- [ ] `php -l` clean\n\n**Verify:** `php -l FhirOntologyAutocompleteExternalModule.php` → `No syntax errors detected`\n\n```json:metadata\n{\"files\": [\"FhirOntologyAutocompleteExternalModule.php\"], \"verifyCommand\": \"php -l FhirOntologyAutocompleteExternalModule.php\", \"acceptanceCriteria\": [\"global $Proj declared\", \"static per-request cache keyed pid|field\", \"annotations initialised to null\", \"isset guard on dictionary result\", \"HIDECHOICE parsing unchanged\", \"no ?? operator\", \"php -l clean\"], \"modelTier\": \"standard\", \"finding\": \"P2\", \"priority\": \"P0\", \"tranche\": \"v0.5.1\"}\n```",
       "blockedBy": [
         3
@@ -87,5 +87,5 @@
       ]
     }
   ],
-  "lastUpdated": "2026-08-27T15:08:42.725611"
+  "lastUpdated": "2026-08-27T15:16:59.123718"
 }
