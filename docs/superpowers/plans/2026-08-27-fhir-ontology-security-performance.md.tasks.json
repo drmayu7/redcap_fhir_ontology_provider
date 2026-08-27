@@ -65,7 +65,7 @@
     {
       "id": 9,
       "subject": "Task 9: Document and prepare v0.5.1",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** Record the shipped changes in the README's existing per-version style and state the deployment and rollback path.\n\n**Files:**\n- Modify: `README.md`\n\n**Acceptance Criteria:**\n- [ ] A `### Version 0.5.1 changes` section exists, matching the formatting of the existing 0.5 section\n- [ ] The new `FHIR request timeout (seconds)` setting is documented in the site-wide settings list\n- [ ] Circuit breaker behaviour is documented so an admin seeing 60s of dead autocomplete understands why\n- [ ] Deployment-as-new-directory and the rollback path are stated\n- [ ] It is stated explicitly that credential masking (S3) is NOT in this release\n\n**Verify:** `grep -c 'Version 0.5.1 changes' README.md && grep -c 'fhir_timeout\\|FHIR request timeout' README.md` → both ≥ 1\n\n```json:metadata\n{\"files\": [\"README.md\"], \"verifyCommand\": \"grep -c 'Version 0.5.1 changes' README.md && grep -c 'FHIR request timeout' README.md\", \"acceptanceCriteria\": [\"0.5.1 changelog section matching existing style\", \"fhir_timeout setting documented\", \"breaker behaviour documented for admins\", \"deploy-as-new-directory and rollback stated\", \"deferred items not claimed as done\"], \"modelTier\": \"mechanical\", \"finding\": \"docs\", \"priority\": \"P2\", \"tranche\": \"v0.5.1\"}\n```",
       "blockedBy": [
         1,
@@ -87,5 +87,5 @@
       ]
     }
   ],
-  "lastUpdated": "2026-08-27T15:31:08.117308"
+  "lastUpdated": "2026-08-27T15:36:44.348045"
 }
