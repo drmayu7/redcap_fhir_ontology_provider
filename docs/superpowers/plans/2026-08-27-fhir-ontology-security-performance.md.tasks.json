@@ -80,12 +80,12 @@
     {
       "id": 8,
       "subject": "Task 8: Mask credential settings",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** Stop the Basic Auth password and OAuth2 client secret rendering in cleartext in the module config UI and sitting plaintext in `redcap_external_module_settings`.\n\n> **USER-ORDERED GATE — NON-SKIPPABLE.** This task was requested by the user in the current conversation. It MUST NOT be closed by walking around it, by declaring it \"verified inline\", or by substituting a cheaper check. Close only after every item in `acceptanceCriteria` has been re-validated independently, with output captured.\n\n> **USER-ORDERED GATE — NON-SKIPPABLE.** This task was requested by the user in the current conversation. It MUST NOT be closed by walking around it, by declaring it \"verified inline\", or by substituting a cheaper check. Close only after every item in `acceptanceCriteria` has been re-validated independently, with output captured.\n\n**Files:**\n- Modify: `config.json` (`cc_client_secret`, `basic_user_password`)\n\n**Acceptance Criteria:**\n- [ ] `\"type\": \"password\"` support under `framework-version: 1` is CONFIRMED before any edit is made\n- [ ] Both settings changed from `\"type\": \"text\"` to `\"type\": \"password\"`\n- [ ] `config.json` remains valid JSON\n- [ ] Committed separately from Tasks 1-7 and 9, as its own deployable tranche\n- [ ] After deployment, both fields render masked in the module system settings UI\n- [ ] After re-entering the Basic Auth password, ontology lookups still return results\n\n**Verify:** `python3 -c \"import json;d=json.load(open('config.json'));print([s['type'] for s in d['system-settings'] if s['key'] in ('cc_client_secret','basic_user_password')])\"` → `['password', 'password']`\n\n```json:metadata\n{\"files\": [\"config.json\"], \"verifyCommand\": \"python3 -c \\\"import json;d=json.load(open('config.json'));print([s['type'] for s in d['system-settings'] if s['key'] in ('cc_client_secret','basic_user_password')])\\\"\", \"acceptanceCriteria\": [\"framework v1 password-type support confirmed BEFORE editing\", \"both settings changed to type password\", \"config.json valid JSON\", \"committed separately as its own tranche\", \"both fields render masked in the settings UI\", \"lookups still work after re-entering the password\"], \"modelTier\": \"mechanical\", \"finding\": \"S3\", \"priority\": \"P3\", \"tranche\": \"v0.5.2\", \"userGate\": true, \"tags\": [\"user-gate\"], \"gateScope\": \"task\", \"failurePolicy\": \"stop-and-report\", \"requireEvidenceTokens\": [[\"masked\", \"password-type\", \"not-cleartext\"], [\"lookup-works\", \"re-entered\", \"autocomplete-returns-results\"]]}\n```",
       "blockedBy": [
         9
       ]
     }
   ],
-  "lastUpdated": "2026-08-27T15:36:44.348045"
+  "lastUpdated": "2026-08-27T15:43:49.908574"
 }
