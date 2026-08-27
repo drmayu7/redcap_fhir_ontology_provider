@@ -374,7 +374,7 @@ to:
 php -l FhirOntologyAutocompleteExternalModule.php
 echo "--- remaining null timeouts (must be empty) ---"
 grep -n "http_get(\$fullUrl, null\|http_post(\$fullUrl, \$postData, null" FhirOntologyAutocompleteExternalModule.php || echo "none - good"
-echo "--- timeout wired in (expect 5 lines) ---"
+echo "--- timeout wired in (expect 8 or more lines) ---"
 grep -c "\$timeout" FhirOntologyAutocompleteExternalModule.php
 ```
 
@@ -1121,7 +1121,7 @@ with:
 php -l FhirOntologyAutocompleteExternalModule.php
 echo "--- concatenation of untrusted values (must be empty) ---"
 grep -n 'v.display +\|+ v.code\|+ v.system\|issue.diagnostics +\|+ issue.diagnostics' FhirOntologyAutocompleteExternalModule.php || echo "none - good"
-echo "--- pre-existing safe .text() calls still present (expect 5) ---"
+echo "--- pre-existing safe .text() calls still present (expect 7) ---"
 grep -c "fhirValueSet_url').text(data.url)\|fhirValueSet_name').text(data.name)\|fhirValueSet_version').text(data.version)\|fhirValueSet_status').text(data.status)\|fhirValueSet_expansion_count')" FhirOntologyAutocompleteExternalModule.php
 ```
 
