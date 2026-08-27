@@ -760,7 +760,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - [ ] `$_SESSION` remains the storage mechanism — relocation is explicitly deferred
 - [ ] `php -l` clean
 
-**Verify:** `php -l FhirOntologyAutocompleteExternalModule.php && grep -c '\* 1000' FhirOntologyAutocompleteExternalModule.php` → `No syntax errors detected` then `0`
+**Verify:** `php -l FhirOntologyAutocompleteExternalModule.php && (grep -n '\* 1000' FhirOntologyAutocompleteExternalModule.php | grep -v '//' || echo 'no executable occurrences')` → `No syntax errors detected` then `no executable occurrences`. NOTE: the prescribed replacement deliberately retains `* 1000` inside an explanatory comment, so a raw string count will be 1, not 0 — the assertion is about executable code.
 
 **Why now, while it is dead code:** under Basic Auth this method never runs. Once OAuth2 lands, the bug caches a 3600s token for ~41 days — but everything works perfectly for the first hour, so deployment-window testing passes and it is signed off. It then surfaces days later as silent 401s with an empty dropdown, which `return_no_result` will label "No Results Found" for whoever investigates.
 
@@ -816,8 +816,8 @@ with:
 
 ```bash
 php -l FhirOntologyAutocompleteExternalModule.php
-echo "--- millisecond bug gone (expect 0) ---"
-grep -c '\* 1000' FhirOntologyAutocompleteExternalModule.php
+echo "--- millisecond bug gone from executable code (expect: no executable occurrences) ---"
+grep -n '\* 1000' FhirOntologyAutocompleteExternalModule.php | grep -v '//' || echo "no executable occurrences"
 echo "--- session storage retained, per user decision to defer relocation (expect 4) ---"
 grep -c 'FHIR_ONTOLOGY_TOKEN' FhirOntologyAutocompleteExternalModule.php
 ```

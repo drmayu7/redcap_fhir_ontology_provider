@@ -37,7 +37,7 @@
     {
       "id": 5,
       "subject": "Task 5: Fix OAuth2 token expiry arithmetic",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** Disarm a latent bug that goes live the moment `authentication_type` switches from `basic` to `cc`.\n\n**Files:**\n- Modify: `FhirOntologyAutocompleteExternalModule.php` (`getClientCredentialsToken`, ~lines 905-935)\n\n**Acceptance Criteria:**\n- [ ] `* 1000` removed from both the `expires_in` path and the fallback\n- [ ] Expiry rule implemented exactly as: `margin = min(60, floor(lifetime / 2))`, expiry = `now + lifetime - margin`\n- [ ] Absent `expires_in` uses an assumed 3600s lifetime under the same rule\n- [ ] `json_decode` result guarded with `is_array()` before any `array_key_exists`\n- [ ] `$_SESSION` remains the storage mechanism — relocation is explicitly deferred\n- [ ] `php -l` clean\n\n**Verify:** `php -l FhirOntologyAutocompleteExternalModule.php && grep -c '\\* 1000' FhirOntologyAutocompleteExternalModule.php` → `No syntax errors detected` then `0`\n\n```json:metadata\n{\"files\": [\"FhirOntologyAutocompleteExternalModule.php\"], \"verifyCommand\": \"php -l FhirOntologyAutocompleteExternalModule.php && grep -c '\\\\* 1000' FhirOntologyAutocompleteExternalModule.php\", \"acceptanceCriteria\": [\"both * 1000 removed\", \"margin = min(60, floor(lifetime/2))\", \"absent expires_in uses 3600s under same rule\", \"is_array guard before array_key_exists\", \"$_SESSION storage untouched\", \"php -l clean\"], \"modelTier\": \"mechanical\", \"finding\": \"P3\", \"priority\": \"P0\", \"tranche\": \"v0.5.1\", \"outOfScope\": \"session-to-server-wide token storage relocation\"}\n```",
       "blockedBy": [
         4
