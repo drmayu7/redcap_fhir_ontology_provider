@@ -1267,7 +1267,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ### Task 8: Mask credential settings
 
-**Goal:** Stop the Basic Auth password and OAuth2 client secret rendering in cleartext in the module config UI and sitting plaintext in `redcap_external_module_settings`.
+**Goal:** Stop the Basic Auth password and OAuth2 client secret rendering in cleartext in the module config UI. NOTE: this does NOT encrypt them at rest — the framework docs state password-type values are still stored as plain text — so `redcap_external_module_settings` and database backups still contain the credential. Only the display half of S3 is closed here.
 
 > **USER-ORDERED GATE — NON-SKIPPABLE.** This task was requested by the user in the current conversation. It MUST NOT be closed by walking around it, by declaring it "verified inline", or by substituting a cheaper check. Close only after every item in `acceptanceCriteria` has been re-validated independently, with output captured.
 

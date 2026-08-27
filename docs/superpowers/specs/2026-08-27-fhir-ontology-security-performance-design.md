@@ -208,6 +208,13 @@ declared minimum is a larger decision than this work justifies.
 
 Switch `cc_client_secret` and `basic_user_password` to `"type": "password"`.
 
+**Scope limit, confirmed during implementation.** This masks the fields in the config
+UI only. The External Modules documentation states plainly: *"Values saved with a password
+setting are still stored as plain text. It is not encrypted."* The credential therefore
+remains readable in `redcap_external_module_settings` and in database backups. S3 has two
+halves — cleartext display and at-rest exposure — and this change closes only the first.
+Closing the second needs a different mechanism and is not attempted here.
+
 Two open risks, which is why this ships separately:
 
 1. **Unverified.** No REDCap or External Modules framework source was available, so
