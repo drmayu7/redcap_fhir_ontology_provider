@@ -1119,8 +1119,10 @@ with:
 
 ```bash
 php -l FhirOntologyAutocompleteExternalModule.php
-echo "--- concatenation of untrusted values (must be empty) ---"
-grep -n 'v.display +\|+ v.code\|+ v.system\|issue.diagnostics +\|+ issue.diagnostics' FhirOntologyAutocompleteExternalModule.php || echo "none - good"
+echo "--- untrusted values concatenated INTO HTML passed to append()/html() (must be empty) ---"
+# NOTE: test the real security property, not the presence of '+'. Concatenating inside
+# createTextNode(...) is safe; only string-built HTML reaching append()/html() is not.
+grep -nE 'append\("|append\('"'"'|\.html\(' FhirOntologyAutocompleteExternalModule.php || echo "none - good"
 echo "--- pre-existing safe .text() calls still present (expect 7) ---"
 grep -c "fhirValueSet_url').text(data.url)\|fhirValueSet_name').text(data.name)\|fhirValueSet_version').text(data.version)\|fhirValueSet_status').text(data.status)\|fhirValueSet_expansion_count')" FhirOntologyAutocompleteExternalModule.php
 ```
