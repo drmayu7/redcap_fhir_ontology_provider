@@ -46,7 +46,7 @@
     {
       "id": 6,
       "subject": "Task 6: Null-safe parsing + unknown actions",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** Stop a log flood during exactly the outages Task 3 handles, and stop unauthenticated callers triggering PHP warnings and pointless upstream calls.\n\n**Files:**\n- Modify: `FhirOntologyAutocompleteExternalModule.php` (`searchOntology` parsing block)\n- Modify: `FindValueSetService.php` (action dispatch and the info branch)\n\n**Acceptance Criteria:**\n- [ ] `$list['expansion']` is never read before the `is_array()` guard\n- [ ] `code`, `system`, `display` accessed via `isset()` ternaries, no `??`\n- [ ] Entries with no `code` are skipped rather than producing a bare `|system` value\n- [ ] An action that is neither `find` nor `info` returns a 400\n- [ ] A `false` from `getValueSetInfo()` surfaces as a 502 carrying an `OperationOutcome`\n- [ ] `php -l` clean on both files\n\n**Verify:** `php -l FhirOntologyAutocompleteExternalModule.php && php -l FindValueSetService.php` → `No syntax errors detected` twice\n\n```json:metadata\n{\"files\": [\"FhirOntologyAutocompleteExternalModule.php\", \"FindValueSetService.php\"], \"verifyCommand\": \"php -l FhirOntologyAutocompleteExternalModule.php && php -l FindValueSetService.php\", \"acceptanceCriteria\": [\"expansion offset inside is_array guard\", \"isset ternaries not ??\", \"codeless entries skipped\", \"unknown action returns 400\", \"getValueSetInfo false surfaces as 502 OperationOutcome\", \"php -l clean on both files\"], \"modelTier\": \"mechanical\", \"finding\": \"P5,S5\", \"priority\": \"P2\", \"tranche\": \"v0.5.1\"}\n```",
       "blockedBy": [
         5,
@@ -87,5 +87,5 @@
       ]
     }
   ],
-  "lastUpdated": "2026-08-27T15:16:59.123718"
+  "lastUpdated": "2026-08-27T15:26:33.473999"
 }
