@@ -115,6 +115,42 @@ assertSame(false, $p['found'], 'extractProperties: OperationOutcome is not found
 $p = ConceptEnrichment::extractProperties(array('nonsense' => 1));
 assertSame(false, $p['found'], 'extractProperties: malformed input');
 
+// --- parseNormalForm --------------------------------------------------------
+
+function nf($fixtureName)
+{
+    $p = ConceptEnrichment::extractProperties(fixture($fixtureName));
+    return ConceptEnrichment::parseNormalForm($p['normalform']);
+}
+
+$a = nf('233604007');
+assertSame(array('113255004|Structure of parenchyma of lung (body structure)'),
+    $a['363698007'], 'parseNormalForm: pneumonia finding site');
+assertSame(array('409774005|Inflammatory morphology (morphologic abnormality)'),
+    $a['116676008'], 'parseNormalForm: pneumonia morphology');
+assertCount(3, $a, 'parseNormalForm: pneumonia has 3 attributes');
+
+$a = nf('174041007');
+assertCount(3, $a['260686004'], 'parseNormalForm: lap appendectomy has 3 methods');
+assertSame('129304002|Excision - action (qualifier value)', $a['260686004'][0],
+    'parseNormalForm: first method in document order');
+assertCount(3, $a['405813007'], 'parseNormalForm: lap appendectomy has 3 procedure sites');
+
+$a = nf('322236009');
+assertSame(array('500'), $a['1142135004'], 'parseNormalForm: concrete strength value');
+assertSame(array('1'), $a['1142139005'], 'parseNormalForm: concrete count value');
+assertSame(array('387517004|Paracetamol (substance)'), $a['762949000'],
+    'parseNormalForm: precise active ingredient');
+
+$a = nf('ontoserver-dialect');
+assertSame(array('113255004|Structure of parenchyma of lung'), $a['363698007'],
+    'parseNormalForm: nested refinement yields focus concept');
+assertSame(array('182353008|Side'), $a['272741003'],
+    'parseNormalForm: nested attribute surfaces independently');
+
+assertSame(array(), ConceptEnrichment::parseNormalForm(null), 'parseNormalForm: null');
+assertSame(array(), ConceptEnrichment::parseNormalForm('   '), 'parseNormalForm: blank');
+
 echo "\n";
 if ($GLOBALS['tests_failed'] > 0) {
     echo "FAILED ({$GLOBALS['tests_failed']} failed, {$GLOBALS['tests_passed']} passed)\n";

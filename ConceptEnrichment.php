@@ -169,4 +169,53 @@ class ConceptEnrichment
         }
         return $out;
     }
+
+    /**
+     * Extract attribute relationships from a SNOMED normal form.
+     *
+     * This is a targeted extractor, NOT a Compositional Grammar parser - the
+     * only question asked is "for attribute X, what are its values". Role group
+     * structure is deliberately flattened; the requirement is to join all
+     * distinct values of an attribute, not to preserve which group each came
+     * from.
+     *
+     * Handles both server dialects (Ontoserver's "===" prefix and unspaced
+     * operators, Snowstorm's spaced form) and three value shapes: a concept
+     * reference, a nested refinement (the focus concept is taken), and a
+     * concrete value (#500 or "text"). Concrete values matter: dropping them
+     * silently makes a drug concept look like it has no strength.
+     *
+     * @param string $normalForm
+     * @return array attribute SCTID => array of distinct values, document order
+     */
+    public static function parseNormalForm($normalForm)
+    {
+        $out = array();
+        if (!is_string($normalForm) || '' === trim($normalForm)) {
+            return $out;
+        }
+        $pattern = '/(\d+)\s*\|[^|]*\|\s*=\s*(?:\(?\s*(\d+)\s*\|([^|]*)\||#([0-9.]+)|"([^"]*)")/';
+        if (!preg_match_all($pattern, $normalForm, $matches, PREG_SET_ORDER)) {
+            return $out;
+        }
+        foreach ($matches as $hit) {
+            $attribute = $hit[1];
+            if (isset($hit[2]) && '' !== $hit[2]) {
+                $value = $hit[2] . '|' . trim($hit[3]);
+            } elseif (isset($hit[4]) && '' !== $hit[4]) {
+                $value = $hit[4];          // concrete number, e.g. 500
+            } elseif (isset($hit[5])) {
+                $value = $hit[5];          // concrete string
+            } else {
+                continue;
+            }
+            if (!isset($out[$attribute])) {
+                $out[$attribute] = array();
+            }
+            if (!in_array($value, $out[$attribute], true)) {
+                $out[$attribute][] = $value;
+            }
+        }
+        return $out;
+    }
 }
