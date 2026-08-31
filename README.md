@@ -16,6 +16,22 @@ behind a proxy server.
 
 In version 0.4 of this module, limited support for @HIDECHOICE was added.
 
+### Version 0.6.0 changes
+
+- **New: concept enrichment via `CodeSystem/$lookup`.** The `@FHIR-LOOKUP` field
+  annotation copies the fully specified name, preferred term, semantic tag,
+  concept status, normal form, and named SNOMED attribute relationships of the
+  selected concept into other fields.
+- On **data entry forms** the values appear in the browser as soon as the concept
+  is selected, and are written again server-side when the record is saved. On
+  **surveys** there is no immediate fill; the fields populate when the response
+  is saved. The server-side write is authoritative either way, so imports and
+  API writes are enriched too.
+- A failed or unavailable lookup writes nothing and never clears existing values.
+- Adds the `redcap_save_record` permission.
+- Adds `ConceptEnrichment.php`, `ConceptLookupService.php`, and the repository's
+  first automated tests.
+
 ### Version 0.5.2 changes
 
 This is a follow up release to 0.5.1. There are no new features.
@@ -165,6 +181,52 @@ field. The module will not try to expand piped variables in the choice list.
 ```text
 @HIDECHOICE='code1,code2'
 ```
+
+### `@FHIR-LOOKUP` — populate other fields from the selected concept
+
+Add this to the **Field Annotation** of an ontology field to copy details of the
+selected concept into other fields on the same instrument.
+
+```
+@FHIR-LOOKUP='fsn:dx_fsn, semtag:dx_semtag, status:dx_status,
+              363698007:dx_finding_site, 116676008:dx_morphology'
+```
+
+Each entry is `source:target_field`.
+
+| Source | What is written | Example |
+|---|---|---|
+| `fsn` | Fully specified name | `Pneumonia (disorder)` |
+| `pt` | Preferred term | `Pneumonia` |
+| `semtag` | Semantic tag from the FSN | `disorder` |
+| `status` | Concept status | `active`, `inactive` |
+| `normalform` | The SNOMED normal form, verbatim | `128601007\|Infectious disease of lung\|…` |
+| a SNOMED attribute id | That attribute's value as `code\|display` | `113255004\|Structure of parenchyma of lung (body structure)` |
+
+Notes:
+
+- The tag is repeatable, so long mappings can be split across several tags.
+- A malformed entry is skipped on its own; valid entries around it still work.
+- Target fields must be on the **same instrument** (form) as the ontology field.
+  A target on a different form is silently ignored.
+- Target fields should carry `@READONLY` so users cannot edit values the
+  terminology server supplied.
+- Use a **Text** field for `fsn`, `pt`, `semtag`, and `status`. Use a **Notes Box**
+  for attribute targets. When a concept has an attribute more than once — most
+  surgical procedures do — every distinct value is stored, joined with `; `, which
+  can be around 240 characters. When a concept's status cannot be determined, the
+  `status` field is left empty.
+- When a concept is **inactive** the terminology server returns no normal form.
+  `fsn`, `pt`, `semtag` and `status` are still written; attribute targets are
+  left exactly as they were.
+- If the terminology server is unreachable, or the code is not in the server's
+  edition, **nothing is written and existing values are left alone.** Enrichment
+  never blanks a field because of an outage. Likewise, if the server answers but
+  omits a detail, only the target for that detail is left alone; the others are
+  still written.
+- On **data entry forms** the target fields fill in as soon as a concept is
+  picked. On **surveys** they fill in when the response is saved, not while the
+  respondent is typing.
 
 
 ### Label Cache Issue

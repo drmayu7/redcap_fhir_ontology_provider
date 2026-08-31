@@ -1,0 +1,19 @@
+{
+  "resourceType": "Parameters",
+  "parameter": [
+    {"name": "code", "valueCode": "233604007"},
+    {"name": "display", "valueString": "Pneumonia"},
+    {"name": "designation", "part": [
+      {"name": "use", "valueCoding": {"system": "http://snomed.info/sct", "code": "900000000000003001", "display": "Fully specified name"}},
+      {"name": "value", "valueString": "Pneumonia (disorder)"}
+    ]},
+    {"name": "property", "part": [
+      {"name": "code", "valueCode": "inactive"},
+      {"name": "value", "valueBoolean": false}
+    ]},
+    {"name": "property", "part": [
+      {"name": "code", "valueCode": "normalForm"},
+      {"name": "value", "valueString": "=== 128601007|Infectious disease of lung|+205237003|Pneumonitis|:{116676008|Associated morphology|=409774005|Inflammatory morphology|,363698007|Finding site|=(113255004|Structure of parenchyma of lung|:272741003|Laterality|=182353008|Side|),370135005|Pathological process|=441862004|Infectious process|}"}
+    ]}
+  ]
+}

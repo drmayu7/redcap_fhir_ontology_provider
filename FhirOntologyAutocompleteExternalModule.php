@@ -28,6 +28,7 @@ namespace AEHRC\FhirOntologyAutocompleteExternalModule;
 use ExternalModules\AbstractExternalModule;
 use ExternalModules\ExternalModules;
 
+require_once __DIR__ . '/ConceptEnrichment.php';
 
 class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule implements \OntologyProvider
 {
@@ -37,6 +38,8 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
     const BREAKER_FAILURE_THRESHOLD = 3;
     /** How long (seconds) the breaker stays open before allowing a trial request. */
     const BREAKER_OPEN_SECONDS = 60;
+    /** $_SESSION key holding per-user cached $lookup responses. */
+    const LOOKUP_CACHE_SESSION_KEY = 'fhir_concept_lookup_cache';
 
     public function __construct()
     {
@@ -52,37 +55,106 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
     }
 
 
-    public function redcap_data_entry_form($project_id, $record,
-                                           $instrument, $event_id, $group_id, $repeat_instance)
+    /**
+     * JavaScript shared by the data entry and survey pages.
+     *
+     * CAUTION: this string is built with a heredoc, so PHP interpolates $name.
+     * Every JavaScript local below is declared with `var` for that reason - a
+     * variable written as $foo would be silently eaten by PHP and php -l would
+     * not report it.
+     */
+    private function getDataEntryJavascript()
     {
-
-        if ($this->getSystemSetting('add_value_tooltip')) {
-            // this is a bit of a hack, if redcap change their code it will break
-            // it looks for all input fields tagged as autosug-ont-field
-            // which should mean they are an ontology lookup and adds
-            // a hover function which will set the fields title to match
-            // its value. This should give a popup with the full value
-            // text shown instead of being restricted by the size of
-            // the input field.
-
-            $dataEntryHtml = <<<EOD
+        $serviceUrl = $this->getUrl('ConceptLookupService.php');
+        $tooltip = $this->getSystemSetting('add_value_tooltip') ? 'true' : 'false';
+        return <<<EOD
 <script type="text/javascript">
       // IIFE - Immediately Invoked Function Expression
       (function($, window, document) {
           // The $ is now locally scoped
-          $('input.autosug-ont-field').each(function(){
-              $( this ).hover(function(){
-                  $( this ).attr('title', $( this ).val());
-                  return true;
+          var serviceUrl = '{$serviceUrl}';
+          var showTooltip = {$tooltip};
+
+          if (showTooltip) {
+              // this is a bit of a hack, if redcap change their code it will break
+              // it looks for all input fields tagged as autosug-ont-field
+              // which should mean they are an ontology lookup and adds
+              // a hover function which will set the fields title to match
+              // its value.
+              $('input.autosug-ont-field').each(function(){
+                  $( this ).hover(function(){
+                      $( this ).attr('title', $( this ).val());
+                      return true;
+                  });
               });
-          });
-          
+          }
+
+          function applyEnrichment(field, value) {
+              if (!value || value.indexOf('|') < 0) {
+                  return;
+              }
+              $.ajax({
+                  url: serviceUrl,
+                  type: 'POST',
+                  dataType: 'json',
+                  data: { field: field, value: value }
+              }).done(function(targets) {
+                  if (!targets) { return; }
+                  // Belt-and-braces only: the service signals failure with HTTP
+                  // 502, which jQuery routes to .fail(), not .done(). This guard
+                  // is not the actual 502 handling path - it just protects
+                  // against a future change that returns the outcome with a
+                  // 200 status instead.
+                  if (targets.resourceType === 'OperationOutcome') { return; }
+                  for (var name in targets) {
+                      if (!targets.hasOwnProperty(name)) { continue; }
+                      // A radio/checkbox group shares one name across all its
+                      // options, and .val() on those rewrites each option's
+                      // value attribute rather than selecting one - which
+                      // corrupts the group in the DOM. Enrichment targets are
+                      // documented as Text or Notes Box fields, so skip
+                      // anything that is not safe to set directly.
+                      var input = $('[name="' + name + '"]').not(':radio').not(':checkbox');
+                      if (input.length) {
+                          input.val(targets[name]).trigger('change');
+                      }
+                  }
+              });
+              // a failed request deliberately does nothing - the save hook is
+              // authoritative and will recompute server-side
+          }
+
+          function fieldNameOf(el) {
+              var raw = $(el).attr('name') || $(el).attr('id') || '';
+              return raw.replace(/^__/, '').replace(/-autosuggest$/, '');
+          }
+
+          // Bind to both events: jQuery UI fires autocompleteselect, but the
+          // field can also be set by paste or by browser autofill. A missed
+          // event is harmless because the save hook recomputes anyway.
+          $('input.autosug-ont-field')
+              .on('autocompleteselect', function(event, ui) {
+                  var self = this;
+                  var picked = (ui && ui.item) ? ui.item.value : $(this).val();
+                  window.setTimeout(function() {
+                      applyEnrichment(fieldNameOf(self), picked);
+                  }, 0);
+              })
+              .on('change', function() {
+                  applyEnrichment(fieldNameOf(this), $(this).val());
+              });
+
       }(window.jQuery, window, document));
       // The global jQuery object is passed as a parameter
 </script>
 EOD;
-            print($dataEntryHtml);
-        }
+    }
+
+
+    public function redcap_data_entry_form($project_id, $record,
+                                           $instrument, $event_id, $group_id, $repeat_instance)
+    {
+        print($this->getDataEntryJavascript());
     }
 
 
@@ -90,34 +162,137 @@ EOD;
                                        $instrument, $event_id, $group_id, $survey_hash, $response_id,
                                        $repeat_instance)
     {
-
-        if ($this->getSystemSetting('add_value_tooltip')) {
-            // this is a bit of a hack, if redcap change their code it will break
-            // it looks for all input fields tagged as autosug-ont-field
-            // which should mean they are an ontology lookup and adds
-            // a hover function which will set the fields title to match
-            // its value. This should give a popup with the full value
-            // text shown instead of being restricted by the size of
-            // the input field.
-            $surveyHtml = <<<EOD
-<script type="text/javascript">
-      // IIFE - Immediately Invoked Function Expression
-      (function($, window, document) {
-          // The $ is now locally scoped
-          $('input.autosug-ont-field').each(function(){
-              $( this ).hover(function(){
-                  $( this ).attr('title', $( this ).val());
-                  return true;
-              });
-          });
-          
-      }(window.jQuery, window, document));
-      // The global jQuery object is passed as a parameter
-</script>
-EOD;
-            print($surveyHtml);
-        }
+        print($this->getDataEntryJavascript());
     }
+
+    /**
+     * Authoritative enrichment path.
+     *
+     * The browser-side preview added to the data entry and survey pages is
+     * deliberately NOT load-bearing: @READONLY fields may render as disabled,
+     * and disabled inputs are not submitted. Recomputing here means the stored
+     * values are correct regardless of what the DOM did, and it also covers
+     * data imports and API writes, which run no JavaScript at all.
+     */
+    public function redcap_save_record($project_id, $record, $instrument, $event_id,
+                                       $group_id, $survey_hash, $response_id, $repeat_instance)
+    {
+        // saveData() below can re-enter this hook. Guard rather than recurse.
+        static $inProgress = false;
+        if ($inProgress) {
+            return;
+        }
+
+        $fields = $this->getEnrichmentFields($project_id, $instrument);
+        if (!$fields) {
+            return;
+        }
+
+        $sourceFields = array_keys($fields);
+        $data = \REDCap::getData(array(
+            'project_id' => $project_id,
+            'records' => $record,
+            'events' => $event_id,
+            'fields' => $sourceFields,
+            'return_format' => 'array'
+        ));
+
+        // Writes are grouped by the location the source value was READ from, so
+        // a value can never be read from one row and written into another.
+        $writes = array();
+        $locations = array();
+        foreach ($fields as $field => $mapping) {
+            $hit = $this->extractSavedValue($data, $record, $event_id, $field, $repeat_instance);
+            if (false === $hit) {
+                // Not found in the getData() result. That is not evidence the user
+                // cleared the concept - getData()'s shape is unverified against a live
+                // REDCap - so write nothing rather than risk erasing good enrichment.
+                continue;
+            }
+            $stored = $hit['value'];
+            $slot = $hit['repeating']
+                  ? 'r|' . $hit['event_id'] . '|' . $hit['instrument'] . '|' . $hit['instance']
+                  : 'f|' . $hit['event_id'];
+            if (!isset($writes[$slot])) {
+                $writes[$slot] = array();
+                $locations[$slot] = $hit;
+            }
+            if ('' === $stored) {
+                // concept genuinely cleared - blank every target it maps to
+                foreach ($mapping as $target) {
+                    $writes[$slot][$target] = '';
+                }
+                continue;
+            }
+            if (!is_string($stored)) {
+                // A non-string here would make explode() raise a TypeError on
+                // PHP 8 and abort the whole save hook.
+                continue;
+            }
+            $parts = explode('|', $stored);
+            if (2 !== count($parts) || '' === $parts[0] || '' === $parts[1]) {
+                continue;
+            }
+            $targets = $this->getEnrichmentTargets($project_id, $field, $parts[0], $parts[1]);
+            if ($targets === false) {
+                // must not fabricate and must not erase - leave everything alone
+                continue;
+            }
+            foreach ($targets as $target => $value) {
+                if (!in_array($target, $mapping, true)) {
+                    // getEnrichmentFields() already dropped cross-form targets;
+                    // this keeps the success path in step with the blank path.
+                    continue;
+                }
+                $writes[$slot][$target] = $value;
+            }
+        }
+
+        // REDCap's 'array' format is [record][event_id][field], with repeating
+        // instruments and repeating events nested under a 'repeat_instances'
+        // key instead. The shape is chosen per slot from where the value was
+        // found - never from $repeat_instance - because extractSavedValue()
+        // may legitimately fall through to the flat location even when a
+        // repeat instance was passed in, and because a repeating EVENT nests
+        // under an empty instrument key rather than under $instrument.
+        $payloads = array();
+        foreach ($writes as $slot => $fieldValues) {
+            if (!$fieldValues) {
+                continue;
+            }
+            $loc = $locations[$slot];
+            if ($loc['repeating']) {
+                $payloads[] = array($record => array(
+                    'repeat_instances' => array(
+                        $loc['event_id'] => array(
+                            $loc['instrument'] => array($loc['instance'] => $fieldValues)
+                        )
+                    )
+                ));
+            } else {
+                $payloads[] = array($record => array($loc['event_id'] => $fieldValues));
+            }
+        }
+
+        if (!$payloads) {
+            return;
+        }
+
+        // One saveData() call per slot, deliberately. Merging slots would put a
+        // flat row and a repeat_instances row inside the same record entry, and
+        // whether saveData() tolerates that mixed shape cannot be verified
+        // without a REDCap instance. One call per slot means every call carries
+        // exactly one of the two documented shapes.
+        $results = array();
+        $inProgress = true;
+        foreach ($payloads as $payload) {
+            $results[] = \REDCap::saveData($project_id, 'array', $payload);
+        }
+        $inProgress = false;
+
+        return $results;
+    }
+
 
 
     public function validateSettings($settings)
@@ -326,45 +501,68 @@ EOD;
         return array_slice($results, 0, $result_limit, true);
     }
 
-    function getHideChoice()
+    /**
+     * Fetch a field's annotation text, preferring the in-memory project object.
+     *
+     * Extracted from getHideChoice() so the save-record path can reuse it -
+     * that path has no $_GET to read the field name from.
+     *
+     * @param int|string|null $project_id
+     * @param string $field
+     * @return string|null the annotation, or null when unavailable
+     */
+    public function getFieldAnnotation($project_id, $field)
     {
-        // $Proj must be pulled in explicitly. Without this it is always null inside
-        // the method, so the in-memory fast path below never runs and every single
-        // keystroke falls through to a full getDataDictionary() call.
+        // $Proj must be pulled in explicitly. Without this it is always null
+        // inside the method, so the in-memory path below never runs and every
+        // single keystroke falls through to a full getDataDictionary() call.
         global $Proj;
-        // one lookup per request per field - autocomplete fires this on every keystroke
+        // one lookup per request per field - autocomplete fires on every keystroke
         static $cache = array();
 
-        $codesToHide=[];
-        if (isset($_GET['field'])){
+        $cacheKey = $project_id . '|' . $field;
+        if (array_key_exists($cacheKey, $cache)) {
+            return $cache[$cacheKey];
+        }
+        $annotation = null;
+        if (($project_id === null || (isset($Proj->project_id) && (string)$Proj->project_id === (string)$project_id))
+                && isset($Proj->metadata[$field])) {
+            // field_annotation is NULL for un-annotated fields, which is the
+            // common case - take the in-memory path on field presence, not on
+            // the annotation existing, or every un-annotated field falls back
+            // to a full dictionary load
+            $annotation = isset($Proj->metadata[$field]['field_annotation'])
+                ? $Proj->metadata[$field]['field_annotation']
+                : null;
+        } elseif ($project_id !== null) {
+            $dd_array = \REDCap::getDataDictionary($project_id, 'array', false, array($field));
+            $annotation = isset($dd_array[$field]['field_annotation'])
+                ? $dd_array[$field]['field_annotation']
+                : null;
+        }
+        $cache[$cacheKey] = $annotation;
+        return $annotation;
+    }
+
+    function getHideChoice()
+    {
+        static $cache = array();
+
+        $codesToHide = [];
+        if (isset($_GET['field'])) {
             $field = $_GET['field'];
             $project_id = isset($_GET['pid']) ? $_GET['pid'] : null;
             $cacheKey = $project_id . '|' . $field;
             if (isset($cache[$cacheKey])) {
                 return $cache[$cacheKey];
             }
-            $annotations = null;
-            if (($project_id === null || (isset($Proj->project_id) && (string)$Proj->project_id === (string)$project_id))
-                    && isset($Proj->metadata[$field])) {
-                // field_annotation is NULL for un-annotated fields, which is the common
-                // case - take the in-memory path on field presence, not on the annotation
-                // existing, or every un-annotated field falls back to a full dictionary load
-                $annotations = isset($Proj->metadata[$field]['field_annotation'])
-                    ? $Proj->metadata[$field]['field_annotation']
-                    : null;
-            }
-            else if ($project_id !== null){
-                $dd_array = \REDCap::getDataDictionary($project_id, 'array', false, array($field));
-                $annotations = isset($dd_array[$field]['field_annotation'])
-                    ? $dd_array[$field]['field_annotation']
-                    : null;
-            }
+            $annotations = $this->getFieldAnnotation($project_id, $field);
             if ($annotations) {
                 $offset = 0;
-                while (preg_match("/@HIDECHOICE='([^']*)'/", $annotations, $matches, PREG_OFFSET_CAPTURE, $offset) === 1){
+                while (preg_match("/@HIDECHOICE='([^']*)'/", $annotations, $matches, PREG_OFFSET_CAPTURE, $offset) === 1) {
                     $listedCodesStr = $matches[1][0];
                     $listedCodes = explode(',', $listedCodesStr);
-                    foreach($listedCodes as $code){
+                    foreach ($listedCodes as $code) {
                         array_push($codesToHide, trim($code));
                     }
                     $offset = $matches[0][1] + strlen($matches[0][0]);
@@ -850,6 +1048,201 @@ EOD;
         $this->recordFhirSuccess();
         return $response;
     }
+
+    /**
+     * Fetch a concept's properties via CodeSystem/$lookup.
+     *
+     * This is the fourth FHIR entry point and is wrapped by the circuit breaker
+     * here rather than inside httpGet(), so OAuth2 token negotiation against a
+     * different host is not trapped by it.
+     *
+     * Returns false for every failure mode - breaker open, timeout, transport
+     * error, and a 404 OperationOutcome for an unknown code. Callers MUST treat
+     * false as "write nothing"; it never means "the concept has no properties".
+     *
+     * @param string $code   e.g. 233604007
+     * @param string $system e.g. http://snomed.info/sct
+     * @return array|false decoded Parameters resource, or false
+     */
+    public function lookupConcept($code, $system)
+    {
+        if (!is_string($code) || '' === $code || !is_string($system) || '' === $system) {
+            return false;
+        }
+        $cacheKey = $code . '|' . $system;
+        if (isset($_SESSION[self::LOOKUP_CACHE_SESSION_KEY][$cacheKey])) {
+            return $_SESSION[self::LOOKUP_CACHE_SESSION_KEY][$cacheKey];
+        }
+        if ($this->isCircuitOpen()) {
+            // Server has failed repeatedly - fail fast rather than tying up a
+            // web server process on a request we already expect to time out.
+            return false;
+        }
+        // NOTE: single quotes are required. In double quotes PHP would
+        // interpolate the undefined variable $lookup and silently produce
+        // "/CodeSystem/?". php -l does not catch this.
+        $url = $this->getFhirServerUri() . '/CodeSystem/$lookup?'
+             . http_build_query(array('system' => $system, 'code' => $code))
+             . '&property=normalForm&property=inactive&property=designation';
+
+        $headers = ['User-Agent: Redcap'];
+        $authHeader = $this->getAuthHeader();
+        if ($authHeader !== false) {
+            $headers[] = $authHeader;
+        }
+        $startedAt = microtime(true);
+        $response = $this->httpGet($url, $headers);
+        if ($response === false) {
+            $this->recordFhirFailureIfSlow(microtime(true) - $startedAt);
+            return false;
+        }
+        $this->recordFhirSuccess();
+
+        $decoded = json_decode($response, true);
+        if (!is_array($decoded) || !isset($decoded['resourceType'])
+                || 'Parameters' !== $decoded['resourceType']
+                || !isset($decoded['parameter'])) {
+            // an OperationOutcome (unknown code) or unparseable body - a fast,
+            // definitive answer, so recordFhirFailureIfSlow above correctly
+            // leaves the breaker alone
+            return false;
+        }
+        if (!isset($_SESSION[self::LOOKUP_CACHE_SESSION_KEY])) {
+            $_SESSION[self::LOOKUP_CACHE_SESSION_KEY] = array();
+        }
+        $_SESSION[self::LOOKUP_CACHE_SESSION_KEY][$cacheKey] = $decoded;
+        return $decoded;
+    }
+
+    /**
+     * Compute the field writes for one selected concept.
+     *
+     * @param int|string|null $project_id
+     * @param string $field the ontology field carrying the @FHIR-LOOKUP tag
+     * @param string $code
+     * @param string $system
+     * @return array|false target field => value, or false when nothing may be written
+     */
+    public function getEnrichmentTargets($project_id, $field, $code, $system)
+    {
+        $annotation = $this->getFieldAnnotation($project_id, $field);
+        $mapping = ConceptEnrichment::parseMapping($annotation, $field);
+        if (!$mapping) {
+            return array();
+        }
+        $decoded = $this->lookupConcept($code, $system);
+        if ($decoded === false) {
+            // breaker open, server down, or unknown code. Returning false rather
+            // than an empty array is what stops an outage from blanking
+            // previously correct enrichment.
+            return false;
+        }
+        return ConceptEnrichment::buildTargets($decoded, $mapping);
+    }
+
+    /**
+     * Find every field on an instrument that carries an @FHIR-LOOKUP tag.
+     *
+     * @param int|string $project_id
+     * @param string $instrument
+     * @return array field name => mapping array
+     */
+    public function getEnrichmentFields($project_id, $instrument)
+    {
+        global $Proj;
+        $found = array();
+        $metadata = null;
+        if (isset($Proj->project_id) && (string)$Proj->project_id === (string)$project_id
+                && isset($Proj->metadata)) {
+            $metadata = $Proj->metadata;
+        }
+        if (null === $metadata) {
+            $metadata = \REDCap::getDataDictionary($project_id, 'array', false, null, array($instrument));
+        }
+        // Which fields live on the instrument being saved. Built from the whole
+        // metadata set before the per-field filter below, because it is used to
+        // vet TARGET fields, not just source fields.
+        $onInstrument = array();
+        foreach ($metadata as $fieldName => $attrs) {
+            if (!isset($attrs['form_name']) || $attrs['form_name'] === $instrument) {
+                $onInstrument[$fieldName] = true;
+            }
+        }
+        foreach ($metadata as $fieldName => $attrs) {
+            if (isset($attrs['form_name']) && $attrs['form_name'] !== $instrument) {
+                continue;
+            }
+            $annotation = isset($attrs['field_annotation']) ? $attrs['field_annotation'] : null;
+            if (!$annotation || false === stripos($annotation, '@FHIR-LOOKUP')) {
+                continue;
+            }
+            $mapping = ConceptEnrichment::parseMapping($annotation, $fieldName);
+            // A target on another form is intentionally ignored: one saveData()
+            // payload row addresses exactly one instrument/instance, so writing
+            // a cross-form target here would put it in the wrong row. Skipping
+            // it leaves the existing value untouched, which is the safe default.
+            foreach ($mapping as $key => $target) {
+                if (!isset($onInstrument[$target])) {
+                    unset($mapping[$key]);
+                }
+            }
+            if ($mapping) {
+                $found[$fieldName] = $mapping;
+            }
+        }
+        return $found;
+    }
+
+    /**
+     * Pull one field's saved value out of a REDCap::getData() array result,
+     * together with the location it was found at.
+     *
+     * Returns false when the field is not present in the result structure at
+     * all. That is deliberately distinct from a hit carrying value '', which
+     * means the field is present and empty, i.e. the user genuinely cleared
+     * the concept. Callers MUST compare the return with === false: under PHP's
+     * loose comparison false == '' is true, and conflating the two would let
+     * an unexpected getData() shape blank every enrichment target.
+     *
+     * The location is reported rather than re-derived by the caller so the
+     * write lands in exactly the row the read came from. 'instrument' is the
+     * ACTUAL key matched under repeat_instances, not the instrument being
+     * saved - REDCap nests repeating EVENTS under an empty instrument key.
+     *
+     * @return array|false array(value, repeating, event_id, instrument, instance)
+     *                     or false when not found
+     */
+    private function extractSavedValue($data, $record, $event_id, $field, $repeat_instance)
+    {
+        if (!isset($data[$record])) {
+            return false;
+        }
+        $recordData = $data[$record];
+        if ($repeat_instance && isset($recordData['repeat_instances'][$event_id])) {
+            foreach ($recordData['repeat_instances'][$event_id] as $instrumentKey => $instances) {
+                if (isset($instances[$repeat_instance][$field])) {
+                    return array(
+                        'value' => $instances[$repeat_instance][$field],
+                        'repeating' => true,
+                        'event_id' => $event_id,
+                        'instrument' => $instrumentKey,
+                        'instance' => $repeat_instance
+                    );
+                }
+            }
+        }
+        if (isset($recordData[$event_id][$field])) {
+            return array(
+                'value' => $recordData[$event_id][$field],
+                'repeating' => false,
+                'event_id' => $event_id,
+                'instrument' => null,
+                'instance' => null
+            );
+        }
+        return false;
+    }
+
 
 
     /**

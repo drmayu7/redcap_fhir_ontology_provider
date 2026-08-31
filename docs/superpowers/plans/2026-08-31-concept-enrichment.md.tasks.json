@@ -1,0 +1,103 @@
+{
+  "planPath": "docs/superpowers/plans/2026-08-31-concept-enrichment.md",
+  "tasks": [
+    {
+      "id": 1,
+      "subject": "Task 1: Test harness and fixture corpus",
+      "status": "completed",
+      "description": "**Goal:** Create the repository's first automated verification - a dependency-free PHP test runner and the 12 captured $lookup responses that later tasks assert against.\n\n**Files:**\n- Create: `tests/run.php`\n- Create: `tests/fixtures/*.json` (12 files)\n\n**Acceptance Criteria:**\n- [ ] `tests/fixtures/` contains 9 Parameters responses, 2 OperationOutcome 404 responses, and 1 hand-written Ontoserver-dialect response\n- [ ] `tests/run.php` provides assertSame, assertTrue, assertCount helpers that record pass/fail\n- [ ] `tests/run.php` exits 0 when all assertions pass and 1 when any fail\n- [ ] Running the suite prints a summary line with counts\n- [ ] No composer, no PHPUnit, no external dependency is introduced\n\n**Verify:** `php tests/run.php` -> prints `12 fixtures loaded` and `OK (N assertions)`, exit code 0\n\n```json:metadata\n{\"files\": [\"tests/run.php\", \"tests/fixtures/\", \"ConceptEnrichment.php\"], \"verifyCommand\": \"php -l ConceptEnrichment.php && php tests/run.php\", \"acceptanceCriteria\": [\"12 fixtures present\", \"runner exits 0 on pass and 1 on fail\", \"no composer or PHPUnit introduced\"], \"modelTier\": \"mechanical\"}\n```"
+    },
+    {
+      "id": 2,
+      "subject": "Task 2: parseMapping() reads @FHIR-LOOKUP",
+      "status": "completed",
+      "description": "**Goal:** Turn a field annotation string into a source => target_field map, skipping malformed entries individually rather than voiding the whole mapping.\n\n**Files:**\n- Modify: `ConceptEnrichment.php`\n- Modify: `tests/run.php`\n\n**Acceptance Criteria:**\n- [ ] `@FHIR-LOOKUP='fsn:dx_fsn, 363698007:dx_site'` yields array('fsn' => 'dx_fsn', '363698007' => 'dx_site')\n- [ ] The tag is repeatable and entries from multiple tags merge\n- [ ] Keywords are case-insensitive; unknown keywords are skipped\n- [ ] A malformed entry is skipped individually, leaving valid siblings intact\n- [ ] Duplicate sources resolve last-wins\n- [ ] A target equal to the source field is refused\n- [ ] An annotation containing only @HIDECHOICE yields an empty map\n- [ ] ctype_digit() is called with a (string) cast\n\n**Verify:** `php tests/run.php` -> `OK (8 assertions)`, exit code 0\n\n```json:metadata\n{\"files\": [\"ConceptEnrichment.php\", \"tests/run.php\"], \"verifyCommand\": \"php -l ConceptEnrichment.php && php tests/run.php\", \"acceptanceCriteria\": [\"repeatable tag merges entries\", \"malformed entry skipped individually\", \"target equal to source field refused\", \"ctype_digit given a string\"], \"modelTier\": \"standard\"}\n```",
+      "blockedBy": [
+        1
+      ]
+    },
+    {
+      "id": 3,
+      "subject": "Task 3: extractProperties() reads scalar properties",
+      "status": "completed",
+      "description": "**Goal:** Pull the scalar properties out of a decoded $lookup response, handling both server dialects and treating FSN as optional.\n\n**Files:**\n- Modify: `ConceptEnrichment.php`\n- Modify: `tests/run.php`\n\n**Acceptance Criteria:**\n- [ ] Snowstorm fixtures yield the correct FSN, PT, semantic tag, and `active` status\n- [ ] The Ontoserver-dialect fixture yields the same values despite \"name\":\"value\" part naming\n- [ ] 194848007 (Atherosclerosis) yields status `inactive` and a null normalform\n- [ ] Semantic tag is derived from the FSN's trailing parenthesis\n- [ ] A response with no `parameter` key sets found to false\n- [ ] A 404 OperationOutcome fixture sets found to false\n\n**Verify:** `php tests/run.php` -> `OK (22 assertions)`, exit code 0\n\n```json:metadata\n{\"files\": [\"ConceptEnrichment.php\", \"tests/run.php\"], \"verifyCommand\": \"php -l ConceptEnrichment.php && php tests/run.php\", \"acceptanceCriteria\": [\"both server dialects parse identically\", \"inactive concept detected\", \"OperationOutcome sets found=false\"], \"modelTier\": \"standard\"}\n```",
+      "blockedBy": [
+        2
+      ]
+    },
+    {
+      "id": 4,
+      "subject": "Task 4: parseNormalForm() extracts attributes",
+      "status": "completed",
+      "description": "**Goal:** Pull attribute => values out of a SNOMED normal form, covering multiple role groups, ungrouped attributes, concrete values, and nested refinements.\n\n**Files:**\n- Modify: `ConceptEnrichment.php`\n- Modify: `tests/run.php`\n\n**Acceptance Criteria:**\n- [ ] Pneumonia yields Finding site, Associated morphology and Pathological process as code|display pairs\n- [ ] Laparoscopic emergency appendectomy yields three distinct values for 260686004 (Method), in document order\n- [ ] Paracetamol yields concrete values 500 and 1 for the strength attributes\n- [ ] The nested Ontoserver refinement yields the focus concept for Finding site AND surfaces 272741003 (Laterality) as its own attribute\n- [ ] Null or empty input yields an empty array\n- [ ] Values are deduplicated within an attribute\n\n**Verify:** `php tests/run.php` -> `OK (35 assertions)`, exit code 0\n\n```json:metadata\n{\"files\": [\"ConceptEnrichment.php\", \"tests/run.php\"], \"verifyCommand\": \"php -l ConceptEnrichment.php && php tests/run.php\", \"acceptanceCriteria\": [\"concrete values #500 and #1 captured, not dropped\", \"3 distinct methods on lap appendectomy\", \"nested refinement yields focus concept\"], \"modelTier\": \"standard\"}\n```",
+      "blockedBy": [
+        3
+      ]
+    },
+    {
+      "id": 5,
+      "subject": "Task 5: buildTargets() assembles field writes",
+      "status": "completed",
+      "description": "**Goal:** Combine a mapping and a $lookup response into target_field => value, enforcing that success blanks absent values while inactive concepts leave attribute targets untouched.\n\n**Files:**\n- Modify: `ConceptEnrichment.php`\n- Modify: `tests/run.php`\n\n**Acceptance Criteria:**\n- [ ] A pneumonia mapping produces FSN, semantic tag, status, and the mapped attribute values\n- [ ] An attribute the concept does not have is written as an empty string (blanked, not skipped)\n- [ ] For an inactive concept with no normalForm, attribute targets are absent from the result while fsn/pt/semtag/status are present\n- [ ] Repeated attributes are joined with '; '\n- [ ] A found=false response yields an empty array so the caller writes nothing\n- [ ] normalform is mappable and stored verbatim\n- [ ] ctype_digit() is called with a (string) cast\n\n**Verify:** `php tests/run.php` -> `OK (47 assertions)`, exit code 0\n\n```json:metadata\n{\"files\": [\"ConceptEnrichment.php\", \"tests/run.php\"], \"verifyCommand\": \"php -l ConceptEnrichment.php && php tests/run.php\", \"acceptanceCriteria\": [\"absent attribute blanked to empty string\", \"inactive concept omits attribute targets entirely\", \"found=false yields empty array\"], \"modelTier\": \"standard\"}\n```",
+      "blockedBy": [
+        4
+      ]
+    },
+    {
+      "id": 6,
+      "subject": "Task 6: Extract getFieldAnnotation()",
+      "status": "completed",
+      "description": "**Goal:** Make the annotation reader reusable by the save-hook path, which has no $_GET, without disturbing the two v0.5.1 performance fixes it contains.\n\n**Files:**\n- Modify: `FhirOntologyAutocompleteExternalModule.php:329-376`\n\n**Acceptance Criteria:**\n- [ ] A new getFieldAnnotation($project_id, $field) returns the annotation string or null\n- [ ] It retains `global $Proj` - without it every call falls through to a full getDataDictionary()\n- [ ] It retains the isset($Proj->metadata[$field]) gate, NOT a gate on field_annotation existing\n- [ ] It retains the $Proj->project_id === $project_id trust check\n- [ ] getHideChoice() produces identical results and keeps its per-request static cache\n- [ ] php -l passes\n\n**Verify:** `php -l FhirOntologyAutocompleteExternalModule.php` -> `No syntax errors detected`\n\n```json:metadata\n{\"files\": [\"FhirOntologyAutocompleteExternalModule.php\"], \"verifyCommand\": \"php -l FhirOntologyAutocompleteExternalModule.php && grep -c 'global \\\\$Proj' FhirOntologyAutocompleteExternalModule.php\", \"acceptanceCriteria\": [\"global $Proj retained exactly once\", \"metadata gate not on field_annotation\", \"getHideChoice behaviour unchanged\"], \"modelTier\": \"standard\"}\n```",
+      "blockedBy": [
+        1
+      ]
+    },
+    {
+      "id": 7,
+      "subject": "Task 7: lookupConcept() with breaker and cache",
+      "status": "completed",
+      "description": "**Goal:** Add the fourth FHIR entry point: fetch a concept's $lookup response, guarded by the circuit breaker and cached per-session.\n\n**Files:**\n- Modify: `FhirOntologyAutocompleteExternalModule.php` (add method near getValueSetInfo(), ~line 855; add require_once after the use statements, ~line 29)\n\n**Acceptance Criteria:**\n- [ ] ConceptEnrichment.php is loaded via require_once (framework v1 does not autoload module classes)\n- [ ] The URL uses a single-quoted '/CodeSystem/$lookup?' so PHP does not interpolate $lookup\n- [ ] property=normalForm, property=inactive and property=designation are all requested\n- [ ] Returns false when the breaker is open, without making an HTTP call\n- [ ] Calls recordFhirFailureIfSlow() on failure and recordFhirSuccess() on success, mirroring getValueSetInfo()\n- [ ] A response that is not a Parameters resource returns false\n- [ ] Successful responses are cached in $_SESSION keyed by code|system\n- [ ] php -l passes\n\n**Verify:** `php -l FhirOntologyAutocompleteExternalModule.php` -> `No syntax errors detected`, plus the single-quote grep check\n\n```json:metadata\n{\"files\": [\"FhirOntologyAutocompleteExternalModule.php\"], \"verifyCommand\": \"php -l FhirOntologyAutocompleteExternalModule.php && grep -n 'CodeSystem/\\\\$lookup' FhirOntologyAutocompleteExternalModule.php\", \"acceptanceCriteria\": [\"$lookup inside SINGLE quotes, not double\", \"breaker checked before any HTTP call\", \"non-Parameters response returns false\"], \"modelTier\": \"standard\"}\n```",
+      "blockedBy": [
+        5,
+        6
+      ]
+    },
+    {
+      "id": 9,
+      "subject": "Task 9: getEnrichmentTargets(), save hook, manifest",
+      "status": "completed",
+      "description": "**Goal:** Add the authoritative server-side path that computes and writes target fields on every save, covering data entry, imports, API writes, and surveys.\n\n**Files:**\n- Modify: `FhirOntologyAutocompleteExternalModule.php` (add methods after lookupConcept(); add hook after redcap_survey_page, ~line 121)\n- Modify: `config.json:13-17`\n\n**Acceptance Criteria:**\n- [ ] redcap_save_record is added to the permissions array and config.json remains valid JSON\n- [ ] getEnrichmentTargets() returns false on lookup failure and an array on success\n- [ ] A static re-entry guard prevents saveData() from re-triggering the hook\n- [ ] Only target fields are written - never the source ontology field\n- [ ] Nothing is written when the target set is empty\n- [ ] $event_id and $repeat_instance are passed through so longitudinal and repeating instruments work\n- [ ] php -l passes and config.json validates\n\n**Verify:** `php -l FhirOntologyAutocompleteExternalModule.php && python3 -c \"import json;json.load(open('config.json'));print('valid')\"` -> `No syntax errors detected`, then `valid`\n\n```json:metadata\n{\"files\": [\"FhirOntologyAutocompleteExternalModule.php\", \"config.json\"], \"verifyCommand\": \"php -l FhirOntologyAutocompleteExternalModule.php && python3 -c \\\"import json;json.load(open('config.json'));print('valid')\\\" && grep -n redcap_save_record config.json\", \"acceptanceCriteria\": [\"redcap_save_record permission present and JSON valid\", \"static re-entry guard present\", \"lookup failure leaves targets untouched\"], \"modelTier\": \"frontier\", \"note\": \"getData/saveData array shapes and hook re-entry are UNVERIFIED without a REDCap instance - report this honestly rather than claiming the hook works.\"}\n```",
+      "blockedBy": [
+        7
+      ]
+    },
+    {
+      "id": 8,
+      "subject": "Task 8: ConceptLookupService.php AJAX endpoint",
+      "status": "completed",
+      "description": "**Goal:** Give the browser a way to request enrichment values for a selected concept, mirroring FindValueSetService.php exactly. Depends on Task 9, which adds getEnrichmentTargets().\n\n**Files:**\n- Create: `ConceptLookupService.php`\n\n**Acceptance Criteria:**\n- [ ] The file is NOT added to no-auth-pages in config.json - authentication is required\n- [ ] Requires field and value parameters; missing ones produce the same 400 error shape as FindValueSetService.php\n- [ ] A value not matching code|system produces a 400\n- [ ] On lookup failure it returns HTTP 502 with an OperationOutcome, matching the existing error contract\n- [ ] On success it returns a JSON object of target_field => value\n- [ ] php -l passes\n\n**Verify:** `php -l ConceptLookupService.php` -> `No syntax errors detected`\n\n```json:metadata\n{\"files\": [\"ConceptLookupService.php\"], \"verifyCommand\": \"php -l ConceptLookupService.php && (grep -n 'no-auth-pages' config.json || echo 'no no-auth-pages block: correct')\", \"acceptanceCriteria\": [\"not listed in no-auth-pages\", \"502 OperationOutcome on failure\", \"400 on malformed code|system\"], \"modelTier\": \"standard\"}\n```",
+      "blockedBy": [
+        9
+      ]
+    },
+    {
+      "id": 10,
+      "subject": "Task 10: Browser-side enrichment preview",
+      "status": "completed",
+      "description": "**Goal:** Fill target fields immediately when a user picks a concept, so enrichment is visible before save - while remaining safe to fail.\n\n**Files:**\n- Modify: `FhirOntologyAutocompleteExternalModule.php:55-121` (both display hooks)\n\n**Acceptance Criteria:**\n- [ ] The JS is added to both redcap_data_entry_form and redcap_survey_page\n- [ ] It binds to BOTH autocompleteselect and change on input.autosug-ont-field\n- [ ] It POSTs to ConceptLookupService.php via $module->getUrl()\n- [ ] A non-200 response is ignored - existing field values are left alone\n- [ ] Every JS local is declared var, never $foo, because the code sits in a PHP heredoc\n- [ ] The existing tooltip behaviour is preserved unchanged\n- [ ] php -l passes\n\n**Verify:** `php -l FhirOntologyAutocompleteExternalModule.php` -> `No syntax errors detected`, plus the heredoc interpolation grep returning no output\n\n```json:metadata\n{\"files\": [\"FhirOntologyAutocompleteExternalModule.php\"], \"verifyCommand\": \"php -l FhirOntologyAutocompleteExternalModule.php && sed -n '/private function getDataEntryJavascript/,/^EOD;/p' FhirOntologyAutocompleteExternalModule.php | grep -nE '\\\\$[A-Za-z_]' | grep -v '{\\\\$' || echo 'no heredoc interpolation hazards'\", \"acceptanceCriteria\": [\"no bare $foo JS locals inside the heredoc\", \"binds both autocompleteselect and change\", \"non-200 response leaves fields untouched\"], \"modelTier\": \"frontier\", \"note\": \"Event name, CSS class and input name shape are inferred from the existing tooltip hack and are UNVERIFIED.\"}\n```",
+      "blockedBy": [
+        8
+      ]
+    },
+    {
+      "id": 11,
+      "subject": "Task 11: Documentation",
+      "status": "completed",
+      "description": "**Goal:** Make the feature usable by an administrator and keep CLAUDE.md honest about what is now testable.\n\n**Files:**\n- Modify: `README.md`\n- Modify: `CLAUDE.md`\n\n**Acceptance Criteria:**\n- [ ] README.md documents @FHIR-LOOKUP with a worked example and the full source table\n- [ ] README.md recommends Notes Box for attribute targets and @READONLY for all targets\n- [ ] README.md gains a v0.6.0 changelog section\n- [ ] README.md states that a failed lookup leaves fields untouched\n- [ ] CLAUDE.md's 'No build, no tests' section is rewritten - tests now exist for ConceptEnrichment only\n- [ ] CLAUDE.md documents the $lookup double-quote interpolation trap\n- [ ] Neither file claims runtime behaviour is verified\n\n**Verify:** `grep -c 'FHIR-LOOKUP' README.md` -> at least 3; `grep -c 'tests/run.php' CLAUDE.md` -> at least 1\n\n```json:metadata\n{\"files\": [\"README.md\", \"CLAUDE.md\"], \"verifyCommand\": \"grep -c 'FHIR-LOOKUP' README.md && grep -c 'tests/run.php' CLAUDE.md && php tests/run.php\", \"acceptanceCriteria\": [\"@FHIR-LOOKUP documented with source table\", \"CLAUDE.md no-tests section rewritten\", \"no claim that runtime behaviour is verified\"], \"modelTier\": \"mechanical\"}\n```",
+      "blockedBy": [
+        10
+      ]
+    }
+  ],
+  "lastUpdated": "2026-08-31T13:19:58.021816"
+}
