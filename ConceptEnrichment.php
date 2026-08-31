@@ -218,4 +218,51 @@ class ConceptEnrichment
         }
         return $out;
     }
+
+    /**
+     * Build the set of field writes for a concept.
+     *
+     * Governing rule: a successful lookup rewrites every mapped target,
+     * INCLUDING blanking ones the concept does not have - otherwise changing a
+     * field from Pneumonia to Appendectomy would leave a lung structure behind.
+     *
+     * The one exception is an inactive concept, which carries no normal form.
+     * Absence of a normal form is not evidence of absent attributes, so
+     * attribute targets are omitted from the result entirely and the caller
+     * leaves whatever is already stored alone.
+     *
+     * An empty result means "write nothing" and is returned for any response
+     * that is not a Parameters resource.
+     *
+     * @param array $decoded json_decode($response, true)
+     * @param array $mapping from parseMapping()
+     * @return array target field name => value to write
+     */
+    public static function buildTargets($decoded, $mapping)
+    {
+        $targets = array();
+        $props = self::extractProperties($decoded);
+        if (!$props['found']) {
+            return $targets;
+        }
+        $hasNormalForm = (is_string($props['normalform']) && '' !== trim($props['normalform']));
+        $attributes = $hasNormalForm ? self::parseNormalForm($props['normalform']) : array();
+        foreach ($mapping as $source => $field) {
+            // (string) cast is required here too - $source arrives as an int
+            // because PHP converts numeric array keys. See parseMapping().
+            if (ctype_digit((string)$source)) {
+                if (!$hasNormalForm) {
+                    // inactive or undefined concept - leave the target as it is
+                    continue;
+                }
+                $targets[$field] = isset($attributes[$source])
+                    ? implode(self::MULTI_VALUE_SEPARATOR, $attributes[$source])
+                    : '';
+            } else {
+                $value = isset($props[$source]) ? $props[$source] : null;
+                $targets[$field] = (null === $value) ? '' : $value;
+            }
+        }
+        return $targets;
+    }
 }

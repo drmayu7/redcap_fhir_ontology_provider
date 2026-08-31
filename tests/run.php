@@ -151,6 +151,39 @@ assertSame(array('182353008|Side'), $a['272741003'],
 assertSame(array(), ConceptEnrichment::parseNormalForm(null), 'parseNormalForm: null');
 assertSame(array(), ConceptEnrichment::parseNormalForm('   '), 'parseNormalForm: blank');
 
+// --- buildTargets -----------------------------------------------------------
+
+$map = array('fsn' => 'dx_fsn', 'semtag' => 'dx_tag', 'status' => 'dx_status',
+             '363698007' => 'dx_site', '260686004' => 'dx_method');
+
+$t = ConceptEnrichment::buildTargets(fixture('233604007'), $map);
+assertSame('Pneumonia (disorder)', $t['dx_fsn'], 'buildTargets: FSN written');
+assertSame('disorder', $t['dx_tag'], 'buildTargets: semantic tag written');
+assertSame('active', $t['dx_status'], 'buildTargets: status written');
+assertSame('113255004|Structure of parenchyma of lung (body structure)', $t['dx_site'],
+    'buildTargets: mapped attribute written');
+assertSame('', $t['dx_method'], 'buildTargets: attribute absent on this concept is blanked');
+
+$t = ConceptEnrichment::buildTargets(fixture('174041007'), $map);
+assertSame('129304002|Excision - action (qualifier value); '
+         . '129433002|Inspection - action (qualifier value); '
+         . '129287005|Incision - action (qualifier value)', $t['dx_method'],
+    'buildTargets: repeated attribute joined with separator');
+
+$t = ConceptEnrichment::buildTargets(fixture('194848007'), $map);
+assertSame('inactive', $t['dx_status'], 'buildTargets: inactive status written');
+assertSame('Atherosclerosis (disorder)', $t['dx_fsn'], 'buildTargets: inactive FSN written');
+assertTrue(!array_key_exists('dx_site', $t),
+    'buildTargets: inactive concept leaves attribute targets untouched');
+assertTrue(!array_key_exists('dx_method', $t),
+    'buildTargets: inactive concept leaves all attribute targets untouched');
+
+$t = ConceptEnrichment::buildTargets(fixture('racecar'), $map);
+assertSame(array(), $t, 'buildTargets: not-found response writes nothing');
+
+$t = ConceptEnrichment::buildTargets(fixture('233604007'), array('normalform' => 'dx_nf'));
+assertTrue(false !== strpos($t['dx_nf'], '363698007'), 'buildTargets: normalform stored verbatim');
+
 echo "\n";
 if ($GLOBALS['tests_failed'] > 0) {
     echo "FAILED ({$GLOBALS['tests_failed']} failed, {$GLOBALS['tests_passed']} passed)\n";
