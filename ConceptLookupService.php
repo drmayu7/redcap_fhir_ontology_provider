@@ -35,10 +35,15 @@ if (!isset($params['field']) || '' === $params['field']) {
 if (!isset($params['value']) || '' === $params['value']) {
     $sendErrorResponse('Invalid Request', 'Missing required parameter "value".');
 }
+if (!is_string($params['field'])) {
+    $sendErrorResponse('Invalid Request', 'Parameter "field" must be a string.');
+}
+if (!is_string($params['value'])) {
+    $sendErrorResponse('Invalid Request', 'Parameter "value" must be a string.');
+}
 
 $field = $params['field'];
 $value = $params['value'];
-$project_id = isset($params['pid']) ? $params['pid'] : (isset($_GET['pid']) ? $_GET['pid'] : null);
 
 // stored values are code|system - display was dropped in v0.5 because
 // code|display|system exceeded REDCap's 100 character limit
@@ -47,7 +52,11 @@ if (2 !== count($parts) || '' === $parts[0] || '' === $parts[1]) {
     $sendErrorResponse('Invalid Request', 'Parameter "value" must be of the form code|system.');
 }
 
-$targets = $module->getEnrichmentTargets($project_id, $field, $parts[0], $parts[1]);
+// The project is REDCap's own authenticated context for this request, never a
+// request parameter. Passing null confines getFieldAnnotation() to the
+// in-memory $Proj and never reaches the getDataDictionary() fallback, so a
+// caller cannot name another project and read its annotations.
+$targets = $module->getEnrichmentTargets(null, $field, $parts[0], $parts[1]);
 
 if ($targets === false) {
     // breaker open, server did not answer, or the code is unknown. Report it
