@@ -122,6 +122,88 @@ EOD;
         }
     }
 
+    /**
+     * Authoritative enrichment path.
+     *
+     * The browser-side preview added to the data entry and survey pages is
+     * deliberately NOT load-bearing: @READONLY fields may render as disabled,
+     * and disabled inputs are not submitted. Recomputing here means the stored
+     * values are correct regardless of what the DOM did, and it also covers
+     * data imports and API writes, which run no JavaScript at all.
+     */
+    public function redcap_save_record($project_id, $record, $instrument, $event_id,
+                                       $group_id, $survey_hash, $response_id, $repeat_instance)
+    {
+        // saveData() below can re-enter this hook. Guard rather than recurse.
+        static $inProgress = false;
+        if ($inProgress) {
+            return;
+        }
+
+        $fields = $this->getEnrichmentFields($project_id, $instrument);
+        if (!$fields) {
+            return;
+        }
+
+        $sourceFields = array_keys($fields);
+        $data = \REDCap::getData(array(
+            'project_id' => $project_id,
+            'records' => $record,
+            'events' => $event_id,
+            'fields' => $sourceFields,
+            'return_format' => 'array'
+        ));
+
+        $writes = array();
+        foreach ($fields as $field => $mapping) {
+            $stored = $this->extractSavedValue($data, $record, $event_id, $field, $repeat_instance);
+            if (null === $stored || '' === $stored) {
+                // concept cleared - blank every target it maps to
+                foreach ($mapping as $target) {
+                    $writes[$target] = '';
+                }
+                continue;
+            }
+            $parts = explode('|', $stored);
+            if (2 !== count($parts) || '' === $parts[0] || '' === $parts[1]) {
+                continue;
+            }
+            $targets = $this->getEnrichmentTargets($project_id, $field, $parts[0], $parts[1]);
+            if ($targets === false) {
+                // must not fabricate and must not erase - leave everything alone
+                continue;
+            }
+            foreach ($targets as $target => $value) {
+                $writes[$target] = $value;
+            }
+        }
+
+        if (!$writes) {
+            return;
+        }
+
+        // REDCap's 'array' format is [record][event_id][field], with repeating
+        // instruments nested under a 'repeat_instances' key instead.
+        if ($repeat_instance) {
+            $payload = array($record => array(
+                'repeat_instances' => array(
+                    $event_id => array(
+                        $instrument => array($repeat_instance => $writes)
+                    )
+                )
+            ));
+        } else {
+            $payload = array($record => array($event_id => $writes));
+        }
+
+        $inProgress = true;
+        $result = \REDCap::saveData($project_id, 'array', $payload);
+        $inProgress = false;
+
+        return $result;
+    }
+
+
 
     public function validateSettings($settings)
     {
@@ -939,6 +1021,88 @@ EOD;
         $_SESSION[self::LOOKUP_CACHE_SESSION_KEY][$cacheKey] = $decoded;
         return $decoded;
     }
+
+    /**
+     * Compute the field writes for one selected concept.
+     *
+     * @param int|string|null $project_id
+     * @param string $field the ontology field carrying the @FHIR-LOOKUP tag
+     * @param string $code
+     * @param string $system
+     * @return array|false target field => value, or false when nothing may be written
+     */
+    public function getEnrichmentTargets($project_id, $field, $code, $system)
+    {
+        $annotation = $this->getFieldAnnotation($project_id, $field);
+        $mapping = ConceptEnrichment::parseMapping($annotation, $field);
+        if (!$mapping) {
+            return array();
+        }
+        $decoded = $this->lookupConcept($code, $system);
+        if ($decoded === false) {
+            // breaker open, server down, or unknown code. Returning false rather
+            // than an empty array is what stops an outage from blanking
+            // previously correct enrichment.
+            return false;
+        }
+        return ConceptEnrichment::buildTargets($decoded, $mapping);
+    }
+
+    /**
+     * Find every field on an instrument that carries an @FHIR-LOOKUP tag.
+     *
+     * @param int|string $project_id
+     * @param string $instrument
+     * @return array field name => mapping array
+     */
+    public function getEnrichmentFields($project_id, $instrument)
+    {
+        global $Proj;
+        $found = array();
+        $metadata = null;
+        if (isset($Proj->project_id) && (string)$Proj->project_id === (string)$project_id
+                && isset($Proj->metadata)) {
+            $metadata = $Proj->metadata;
+        }
+        if (null === $metadata) {
+            $metadata = \REDCap::getDataDictionary($project_id, 'array', false, null, array($instrument));
+        }
+        foreach ($metadata as $fieldName => $attrs) {
+            if (isset($attrs['form_name']) && $attrs['form_name'] !== $instrument) {
+                continue;
+            }
+            $annotation = isset($attrs['field_annotation']) ? $attrs['field_annotation'] : null;
+            if (!$annotation || false === stripos($annotation, '@FHIR-LOOKUP')) {
+                continue;
+            }
+            $mapping = ConceptEnrichment::parseMapping($annotation, $fieldName);
+            if ($mapping) {
+                $found[$fieldName] = $mapping;
+            }
+        }
+        return $found;
+    }
+
+    /** Pull one field's saved value out of a REDCap::getData() array result. */
+    private function extractSavedValue($data, $record, $event_id, $field, $repeat_instance)
+    {
+        if (!isset($data[$record])) {
+            return null;
+        }
+        $recordData = $data[$record];
+        if ($repeat_instance && isset($recordData['repeat_instances'][$event_id])) {
+            foreach ($recordData['repeat_instances'][$event_id] as $instances) {
+                if (isset($instances[$repeat_instance][$field])) {
+                    return $instances[$repeat_instance][$field];
+                }
+            }
+        }
+        if (isset($recordData[$event_id][$field])) {
+            return $recordData[$event_id][$field];
+        }
+        return null;
+    }
+
 
 
     /**
