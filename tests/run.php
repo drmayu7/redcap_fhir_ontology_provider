@@ -64,6 +64,31 @@ if (12 !== $fixtureCount) {
 // Test cases are appended below by later tasks.
 // ---------------------------------------------------------------------------
 
+// --- parseMapping -----------------------------------------------------------
+
+$m = ConceptEnrichment::parseMapping("@FHIR-LOOKUP='fsn:dx_fsn, 363698007:dx_site'", 'dx');
+assertSame(array('fsn' => 'dx_fsn', '363698007' => 'dx_site'), $m, 'parseMapping: basic');
+
+$m = ConceptEnrichment::parseMapping("@FHIR-LOOKUP='FSN:a' @FHIR-LOOKUP='pt:b'", 'dx');
+assertSame(array('fsn' => 'a', 'pt' => 'b'), $m, 'parseMapping: repeatable tag, case-insensitive');
+
+$m = ConceptEnrichment::parseMapping("@FHIR-LOOKUP='fsn:a, garbage, bogus:b, :c, d:'", 'dx');
+assertSame(array('fsn' => 'a'), $m, 'parseMapping: malformed entries skipped individually');
+
+$m = ConceptEnrichment::parseMapping("@FHIR-LOOKUP='fsn:first, fsn:second'", 'dx');
+assertSame(array('fsn' => 'second'), $m, 'parseMapping: duplicate source, last wins');
+
+$m = ConceptEnrichment::parseMapping("@FHIR-LOOKUP='fsn:dx'", 'dx');
+assertSame(array(), $m, 'parseMapping: refuses target equal to source field');
+
+$m = ConceptEnrichment::parseMapping("@HIDECHOICE='123,456'", 'dx');
+assertSame(array(), $m, 'parseMapping: ignores unrelated annotations');
+
+$m = ConceptEnrichment::parseMapping("@FHIR-LOOKUP='  fsn : dx_fsn  ,  116676008 : dx_morph '", 'dx');
+assertSame(array('fsn' => 'dx_fsn', '116676008' => 'dx_morph'), $m, 'parseMapping: whitespace tolerated');
+
+assertSame(array(), ConceptEnrichment::parseMapping(null, 'dx'), 'parseMapping: null annotation');
+
 echo "\n";
 if ($GLOBALS['tests_failed'] > 0) {
     echo "FAILED ({$GLOBALS['tests_failed']} failed, {$GLOBALS['tests_passed']} passed)\n";
