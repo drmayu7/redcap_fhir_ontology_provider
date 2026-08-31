@@ -55,37 +55,96 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
     }
 
 
-    public function redcap_data_entry_form($project_id, $record,
-                                           $instrument, $event_id, $group_id, $repeat_instance)
+    /**
+     * JavaScript shared by the data entry and survey pages.
+     *
+     * CAUTION: this string is built with a heredoc, so PHP interpolates $name.
+     * Every JavaScript local below is declared with `var` for that reason - a
+     * variable written as $foo would be silently eaten by PHP and php -l would
+     * not report it.
+     */
+    private function getDataEntryJavascript()
     {
-
-        if ($this->getSystemSetting('add_value_tooltip')) {
-            // this is a bit of a hack, if redcap change their code it will break
-            // it looks for all input fields tagged as autosug-ont-field
-            // which should mean they are an ontology lookup and adds
-            // a hover function which will set the fields title to match
-            // its value. This should give a popup with the full value
-            // text shown instead of being restricted by the size of
-            // the input field.
-
-            $dataEntryHtml = <<<EOD
+        $serviceUrl = $this->getUrl('ConceptLookupService.php');
+        $tooltip = $this->getSystemSetting('add_value_tooltip') ? 'true' : 'false';
+        return <<<EOD
 <script type="text/javascript">
       // IIFE - Immediately Invoked Function Expression
       (function($, window, document) {
           // The $ is now locally scoped
-          $('input.autosug-ont-field').each(function(){
-              $( this ).hover(function(){
-                  $( this ).attr('title', $( this ).val());
-                  return true;
+          var serviceUrl = '{$serviceUrl}';
+          var showTooltip = {$tooltip};
+
+          if (showTooltip) {
+              // this is a bit of a hack, if redcap change their code it will break
+              // it looks for all input fields tagged as autosug-ont-field
+              // which should mean they are an ontology lookup and adds
+              // a hover function which will set the fields title to match
+              // its value.
+              $('input.autosug-ont-field').each(function(){
+                  $( this ).hover(function(){
+                      $( this ).attr('title', $( this ).val());
+                      return true;
+                  });
               });
-          });
-          
+          }
+
+          function applyEnrichment(field, value) {
+              if (!value || value.indexOf('|') < 0) {
+                  return;
+              }
+              $.ajax({
+                  url: serviceUrl,
+                  type: 'POST',
+                  dataType: 'json',
+                  data: { field: field, value: value }
+              }).done(function(targets) {
+                  if (!targets) { return; }
+                  // a 502 OperationOutcome must never overwrite stored values
+                  if (targets.resourceType === 'OperationOutcome') { return; }
+                  for (var name in targets) {
+                      if (!targets.hasOwnProperty(name)) { continue; }
+                      var input = $('[name="' + name + '"]');
+                      if (input.length) {
+                          input.val(targets[name]).trigger('change');
+                      }
+                  }
+              });
+              // a failed request deliberately does nothing - the save hook is
+              // authoritative and will recompute server-side
+          }
+
+          function fieldNameOf(el) {
+              var raw = $(el).attr('name') || $(el).attr('id') || '';
+              return raw.replace(/^__/, '').replace(/-autosuggest$/, '');
+          }
+
+          // Bind to both events: jQuery UI fires autocompleteselect, but the
+          // field can also be set by paste or by browser autofill. A missed
+          // event is harmless because the save hook recomputes anyway.
+          $('input.autosug-ont-field')
+              .on('autocompleteselect', function(event, ui) {
+                  var self = this;
+                  var picked = (ui && ui.item) ? ui.item.value : $(this).val();
+                  window.setTimeout(function() {
+                      applyEnrichment(fieldNameOf(self), picked);
+                  }, 0);
+              })
+              .on('change', function() {
+                  applyEnrichment(fieldNameOf(this), $(this).val());
+              });
+
       }(window.jQuery, window, document));
       // The global jQuery object is passed as a parameter
 </script>
 EOD;
-            print($dataEntryHtml);
-        }
+    }
+
+
+    public function redcap_data_entry_form($project_id, $record,
+                                           $instrument, $event_id, $group_id, $repeat_instance)
+    {
+        print($this->getDataEntryJavascript());
     }
 
 
@@ -93,33 +152,7 @@ EOD;
                                        $instrument, $event_id, $group_id, $survey_hash, $response_id,
                                        $repeat_instance)
     {
-
-        if ($this->getSystemSetting('add_value_tooltip')) {
-            // this is a bit of a hack, if redcap change their code it will break
-            // it looks for all input fields tagged as autosug-ont-field
-            // which should mean they are an ontology lookup and adds
-            // a hover function which will set the fields title to match
-            // its value. This should give a popup with the full value
-            // text shown instead of being restricted by the size of
-            // the input field.
-            $surveyHtml = <<<EOD
-<script type="text/javascript">
-      // IIFE - Immediately Invoked Function Expression
-      (function($, window, document) {
-          // The $ is now locally scoped
-          $('input.autosug-ont-field').each(function(){
-              $( this ).hover(function(){
-                  $( this ).attr('title', $( this ).val());
-                  return true;
-              });
-          });
-          
-      }(window.jQuery, window, document));
-      // The global jQuery object is passed as a parameter
-</script>
-EOD;
-            print($surveyHtml);
-        }
+        print($this->getDataEntryJavascript());
     }
 
     /**
