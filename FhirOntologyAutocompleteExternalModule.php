@@ -28,6 +28,7 @@ namespace AEHRC\FhirOntologyAutocompleteExternalModule;
 use ExternalModules\AbstractExternalModule;
 use ExternalModules\ExternalModules;
 
+require_once __DIR__ . '/ConceptEnrichment.php';
 
 class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule implements \OntologyProvider
 {
@@ -37,6 +38,8 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
     const BREAKER_FAILURE_THRESHOLD = 3;
     /** How long (seconds) the breaker stays open before allowing a trial request. */
     const BREAKER_OPEN_SECONDS = 60;
+    /** $_SESSION key holding per-user cached $lookup responses. */
+    const LOOKUP_CACHE_SESSION_KEY = 'fhir_concept_lookup_cache';
 
     public function __construct()
     {
@@ -872,6 +875,69 @@ EOD;
         }
         $this->recordFhirSuccess();
         return $response;
+    }
+
+    /**
+     * Fetch a concept's properties via CodeSystem/$lookup.
+     *
+     * This is the fourth FHIR entry point and is wrapped by the circuit breaker
+     * here rather than inside httpGet(), so OAuth2 token negotiation against a
+     * different host is not trapped by it.
+     *
+     * Returns false for every failure mode - breaker open, timeout, transport
+     * error, and a 404 OperationOutcome for an unknown code. Callers MUST treat
+     * false as "write nothing"; it never means "the concept has no properties".
+     *
+     * @param string $code   e.g. 233604007
+     * @param string $system e.g. http://snomed.info/sct
+     * @return array|false decoded Parameters resource, or false
+     */
+    public function lookupConcept($code, $system)
+    {
+        if (!is_string($code) || '' === $code || !is_string($system) || '' === $system) {
+            return false;
+        }
+        $cacheKey = $code . '|' . $system;
+        if (isset($_SESSION[self::LOOKUP_CACHE_SESSION_KEY][$cacheKey])) {
+            return $_SESSION[self::LOOKUP_CACHE_SESSION_KEY][$cacheKey];
+        }
+        if ($this->isCircuitOpen()) {
+            // Server has failed repeatedly - fail fast rather than tying up a
+            // web server process on a request we already expect to time out.
+            return false;
+        }
+        // NOTE: single quotes are required. In double quotes PHP would
+        // interpolate the undefined variable $lookup and silently produce
+        // "/CodeSystem/?". php -l does not catch this.
+        $url = $this->getFhirServerUri() . '/CodeSystem/$lookup?'
+             . http_build_query(array('system' => $system, 'code' => $code))
+             . '&property=normalForm&property=inactive&property=designation';
+
+        $headers = ['User-Agent: Redcap'];
+        $authHeader = $this->getAuthHeader();
+        if ($authHeader !== false) {
+            $headers[] = $authHeader;
+        }
+        $startedAt = microtime(true);
+        $response = $this->httpGet($url, $headers);
+        if ($response === false) {
+            $this->recordFhirFailureIfSlow(microtime(true) - $startedAt);
+            return false;
+        }
+        $this->recordFhirSuccess();
+
+        $decoded = json_decode($response, true);
+        if (!is_array($decoded) || !isset($decoded['parameter'])) {
+            // an OperationOutcome (unknown code) or unparseable body - a fast,
+            // definitive answer, so recordFhirFailureIfSlow above correctly
+            // leaves the breaker alone
+            return false;
+        }
+        if (!isset($_SESSION[self::LOOKUP_CACHE_SESSION_KEY])) {
+            $_SESSION[self::LOOKUP_CACHE_SESSION_KEY] = array();
+        }
+        $_SESSION[self::LOOKUP_CACHE_SESSION_KEY][$cacheKey] = $decoded;
+        return $decoded;
     }
 
 
