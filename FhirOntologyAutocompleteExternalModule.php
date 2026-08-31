@@ -157,8 +157,14 @@ EOD;
         $writes = array();
         foreach ($fields as $field => $mapping) {
             $stored = $this->extractSavedValue($data, $record, $event_id, $field, $repeat_instance);
-            if (null === $stored || '' === $stored) {
-                // concept cleared - blank every target it maps to
+            if (false === $stored) {
+                // Not found in the getData() result. That is not evidence the user
+                // cleared the concept - getData()'s shape is unverified against a live
+                // REDCap - so write nothing rather than risk erasing good enrichment.
+                continue;
+            }
+            if ('' === $stored) {
+                // concept genuinely cleared - blank every target it maps to
                 foreach ($mapping as $target) {
                     $writes[$target] = '';
                 }
@@ -1083,11 +1089,22 @@ EOD;
         return $found;
     }
 
-    /** Pull one field's saved value out of a REDCap::getData() array result. */
+    /**
+     * Pull one field's saved value out of a REDCap::getData() array result.
+     *
+     * Returns false when the field is not present in the result structure at
+     * all. That is deliberately distinct from '', which means the field is
+     * present and empty, i.e. the user genuinely cleared the concept. Callers
+     * MUST compare with === : under PHP's loose comparison false == '' is
+     * true, and conflating the two would let an unexpected getData() shape
+     * blank every enrichment target.
+     *
+     * @return string|false the stored value, or false when not found
+     */
     private function extractSavedValue($data, $record, $event_id, $field, $repeat_instance)
     {
         if (!isset($data[$record])) {
-            return null;
+            return false;
         }
         $recordData = $data[$record];
         if ($repeat_instance && isset($recordData['repeat_instances'][$event_id])) {
@@ -1100,7 +1117,7 @@ EOD;
         if (isset($recordData[$event_id][$field])) {
             return $recordData[$event_id][$field];
         }
-        return null;
+        return false;
     }
 
 
