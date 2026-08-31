@@ -16,6 +16,20 @@ behind a proxy server.
 
 In version 0.4 of this module, limited support for @HIDECHOICE was added.
 
+### Version 0.6.0 changes
+
+- **New: concept enrichment via `CodeSystem/$lookup`.** The `@FHIR-LOOKUP` field
+  annotation copies the fully specified name, preferred term, semantic tag,
+  concept status, normal form, and named SNOMED attribute relationships of the
+  selected concept into other fields.
+- Values are written both in the browser on selection and again server-side on
+  save. The server-side write is authoritative, so imports and API writes are
+  enriched too.
+- A failed or unavailable lookup writes nothing and never clears existing values.
+- Adds the `redcap_save_record` permission.
+- Adds `ConceptEnrichment.php`, `ConceptLookupService.php`, and the repository's
+  first automated tests.
+
 ### Version 0.5.2 changes
 
 This is a follow up release to 0.5.1. There are no new features.
@@ -100,20 +114,6 @@ This dropdown controls the use of search by 'LOINC implicit answer set' and is n
 of LOINC in different servers. 
 
 
-### v0.6.0
-
-- **New: concept enrichment via `CodeSystem/$lookup`.** The `@FHIR-LOOKUP` field
-  annotation copies the fully specified name, preferred term, semantic tag,
-  concept status, normal form, and named SNOMED attribute relationships of the
-  selected concept into other fields.
-- Values are written both in the browser on selection and again server-side on
-  save. The server-side write is authoritative, so imports and API writes are
-  enriched too.
-- A failed or unavailable lookup writes nothing and never clears existing values.
-- Adds the `redcap_save_record` permission.
-- Adds `ConceptEnrichment.php`, `ConceptLookupService.php`, and the repository's
-  first automated tests.
-
 ## Using the module
 The module code needs to be placed in a directory `modules/fhir-ontology-provider_v0.5`
 
@@ -197,7 +197,7 @@ Each entry is `source:target_field`.
 | `fsn` | Fully specified name | `Pneumonia (disorder)` |
 | `pt` | Preferred term | `Pneumonia` |
 | `semtag` | Semantic tag from the FSN | `disorder` |
-| `status` | Concept status | `active`, `inactive`, `unknown` |
+| `status` | Concept status | `active`, `inactive` |
 | `normalform` | The SNOMED normal form, verbatim | `128601007\|Infectious disease of lung\|…` |
 | a SNOMED attribute id | That attribute's value as `code\|display` | `113255004\|Structure of parenchyma of lung (body structure)` |
 
@@ -212,7 +212,8 @@ Notes:
 - Use a **Text** field for `fsn`, `pt`, `semtag`, and `status`. Use a **Notes Box**
   for attribute targets. When a concept has an attribute more than once — most
   surgical procedures do — every distinct value is stored, joined with `; `, which
-  can exceed 200 characters.
+  can be around 240 characters. When a concept's status cannot be determined, the
+  `status` field is left empty.
 - When a concept is **inactive** the terminology server returns no normal form.
   `fsn`, `pt`, `semtag` and `status` are still written; attribute targets are
   left exactly as they were.

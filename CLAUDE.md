@@ -8,7 +8,7 @@ A REDCap **External Module** that lets a FHIR terminology server act as a REDCap
 
 This is a fork of `aehrc/redcap_fhir_ontology_provider`, continuing its release line (upstream's last release was `v0.5`; this repo adds `v0.5.1` / `v0.5.2`). Upstream has been dormant since 2024-02.
 
-## No build, no tests, no dependencies
+## No build, minimal tests, no dependencies
 
 There is no composer, npm, Makefile, or CI. There IS now a small test suite, but
 it covers `ConceptEnrichment.php` only — the pure parsing logic with no HTTP and
@@ -41,11 +41,13 @@ say so rather than asserting it works.
 
 ## Architecture
 
-**Three source files, one manifest.** The module file is large (~1100 lines) and mixes concerns — provider logic, designer markup, the HTTP layer, and auth all live in it.
+**Four source files, one manifest.** The main module file is large (1497 lines) and mixes concerns — provider logic, designer markup, the HTTP layer, and auth all live in it.
 
 - `config.json` — manifest: settings schema, hook permissions, compatibility floors.
-- `FhirOntologyAutocompleteExternalModule.php` — everything else.
+- `FhirOntologyAutocompleteExternalModule.php` — the primary module with provider registration, online designer UI, ValueSet search, and concept enrichment orchestration.
 - `FindValueSetService.php` — thin AJAX entry point for the Online Designer. Validates params and dispatches to the module; has no logic of its own. **Requires authentication** — it is deliberately *not* in `no-auth-pages`.
+- `ConceptEnrichment.php` — pure parsing logic: annotation mapping, `$lookup` response extraction, SNOMED normal-form parsing, target assembly. No HTTP, no REDCap, no framework dependency, which is why it is the only file with automated tests.
+- `ConceptLookupService.php` — thin AJAX entry point for the data-entry and survey pages. Validates params and dispatches to the module. **Requires authentication** — like `FindValueSetService.php` it is deliberately *not* in `no-auth-pages`. Takes only `field` and `value`; it deliberately does not accept a `pid`.
 
 ### How the provider gets registered
 
