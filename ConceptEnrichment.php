@@ -72,4 +72,101 @@ class ConceptEnrichment
         }
         return $mapping;
     }
+
+    /**
+     * Return the first value* member of a Parameters part, whatever its type.
+     * Servers disagree here: Snowstorm names the member "valueString" and the
+     * part "valueString"; Ontoserver names the part "value". Accept both.
+     */
+    private static function partValue($part)
+    {
+        foreach ($part as $key => $value) {
+            if (0 === strpos($key, 'value')) {
+                return $value;
+            }
+        }
+        return null;
+    }
+
+    /** SNOMED semantic tag is the final parenthesised group of the FSN. */
+    private static function semanticTag($fsn)
+    {
+        if (is_string($fsn) && preg_match('/\(([^()]*)\)\s*$/', $fsn, $m)) {
+            return $m[1];
+        }
+        return null;
+    }
+
+    /**
+     * Extract the scalar properties from a decoded CodeSystem/$lookup response.
+     *
+     * 'found' is false for anything that is not a Parameters resource - notably
+     * the 404 OperationOutcome returned for an unknown code. Callers must treat
+     * found=false as "write nothing", never as "the concept has no properties".
+     *
+     * @param array $decoded json_decode($response, true)
+     * @return array with keys found, fsn, pt, semtag, status, normalform
+     */
+    public static function extractProperties($decoded)
+    {
+        $out = array('found' => false, 'fsn' => null, 'pt' => null,
+                     'semtag' => null, 'status' => null, 'normalform' => null);
+        if (!is_array($decoded) || !isset($decoded['parameter']) || !is_array($decoded['parameter'])) {
+            return $out;
+        }
+        $out['found'] = true;
+        $inactive = null;
+        foreach ($decoded['parameter'] as $param) {
+            if (!isset($param['name'])) {
+                continue;
+            }
+            $name = $param['name'];
+            if ('display' === $name && isset($param['valueString'])) {
+                $out['pt'] = $param['valueString'];
+            } elseif ('inactive' === $name) {
+                // Snowstorm also reports this as a top-level parameter
+                $inactive = self::partValue($param);
+            } elseif ('designation' === $name && isset($param['part'])) {
+                $use = null;
+                $value = null;
+                foreach ($param['part'] as $sub) {
+                    if (!isset($sub['name'])) {
+                        continue;
+                    }
+                    if ('use' === $sub['name'] && isset($sub['valueCoding']['code'])) {
+                        $use = $sub['valueCoding']['code'];
+                    } elseif ('value' === $sub['name'] && isset($sub['valueString'])) {
+                        $value = $sub['valueString'];
+                    }
+                }
+                if (self::FSN_DESIGNATION_CODE === $use && null !== $value) {
+                    $out['fsn'] = $value;
+                }
+            } elseif ('property' === $name && isset($param['part'])) {
+                $code = null;
+                $value = null;
+                foreach ($param['part'] as $sub) {
+                    if (!isset($sub['name'])) {
+                        continue;
+                    }
+                    if ('code' === $sub['name']) {
+                        $code = self::partValue($sub);
+                    } elseif (0 === strpos($sub['name'], 'value')) {
+                        $value = self::partValue($sub);
+                    }
+                }
+                if ('normalForm' === $code && is_string($value)) {
+                    $out['normalform'] = $value;
+                } elseif ('inactive' === $code && null === $inactive) {
+                    $inactive = $value;
+                }
+            }
+        }
+        $out['semtag'] = self::semanticTag($out['fsn']);
+        if (null !== $inactive) {
+            $truthy = (true === $inactive || 1 === $inactive || 'true' === $inactive || '1' === $inactive);
+            $out['status'] = $truthy ? 'inactive' : 'active';
+        }
+        return $out;
+    }
 }

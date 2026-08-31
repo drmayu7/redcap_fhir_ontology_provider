@@ -89,6 +89,32 @@ assertSame(array('fsn' => 'dx_fsn', '116676008' => 'dx_morph'), $m, 'parseMappin
 
 assertSame(array(), ConceptEnrichment::parseMapping(null, 'dx'), 'parseMapping: null annotation');
 
+// --- extractProperties ------------------------------------------------------
+
+$p = ConceptEnrichment::extractProperties(fixture('233604007'));
+assertTrue($p['found'], 'extractProperties: pneumonia found');
+assertSame('Pneumonia (disorder)', $p['fsn'], 'extractProperties: FSN');
+assertSame('Pneumonia', $p['pt'], 'extractProperties: preferred term');
+assertSame('disorder', $p['semtag'], 'extractProperties: semantic tag');
+assertSame('active', $p['status'], 'extractProperties: status active');
+assertTrue(false !== strpos($p['normalform'], '363698007'), 'extractProperties: normalForm present');
+
+$p = ConceptEnrichment::extractProperties(fixture('ontoserver-dialect'));
+assertSame('Pneumonia (disorder)', $p['fsn'], 'extractProperties: Ontoserver FSN');
+assertSame('active', $p['status'], 'extractProperties: Ontoserver status');
+assertTrue(false !== strpos($p['normalform'], '=== 128601007'), 'extractProperties: Ontoserver normalForm via "value" part');
+
+$p = ConceptEnrichment::extractProperties(fixture('194848007'));
+assertSame('inactive', $p['status'], 'extractProperties: inactive concept');
+assertSame(null, $p['normalform'], 'extractProperties: inactive concept has no normalForm');
+assertSame('Atherosclerosis (disorder)', $p['fsn'], 'extractProperties: inactive concept still has FSN');
+
+$p = ConceptEnrichment::extractProperties(fixture('racecar'));
+assertSame(false, $p['found'], 'extractProperties: OperationOutcome is not found');
+
+$p = ConceptEnrichment::extractProperties(array('nonsense' => 1));
+assertSame(false, $p['found'], 'extractProperties: malformed input');
+
 echo "\n";
 if ($GLOBALS['tests_failed'] > 0) {
     echo "FAILED ({$GLOBALS['tests_failed']} failed, {$GLOBALS['tests_passed']} passed)\n";
