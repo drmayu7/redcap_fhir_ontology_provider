@@ -10,21 +10,34 @@ This is a fork of `aehrc/redcap_fhir_ontology_provider`, continuing its release 
 
 ## No build, no tests, no dependencies
 
-There is no composer, npm, Makefile, CI, or test framework. Do not go looking for a test suite — its absence is expected, not a broken setup. The only automated verification available is:
+There is no composer, npm, Makefile, or CI. There IS now a small test suite, but
+it covers `ConceptEnrichment.php` only — the pure parsing logic with no HTTP and
+no REDCap dependency. Everything else still requires a running REDCap instance.
 
 ```bash
 php -l FhirOntologyAutocompleteExternalModule.php
 php -l FindValueSetService.php
+php -l ConceptEnrichment.php
+php -l ConceptLookupService.php
 python3 -c "import json;json.load(open('config.json'));print('valid')"
+php tests/run.php
 ```
 
-Everything else requires a running REDCap instance with this module installed. Treat runtime behaviour as unverifiable locally and say so rather than asserting it works.
+`tests/run.php` is plain PHP with hand-rolled assertions — no PHPUnit, no
+composer. Fixtures in `tests/fixtures/` are real `$lookup` responses; the
+capture command is in the v0.6.0 spec.
+
+Treat everything not covered by `php tests/run.php` as unverifiable locally and
+say so rather than asserting it works.
 
 ## Hard constraints
 
 - **PHP 5.4 floor.** `config.json` declares `"php-version-min": "5.4.0"`. The null-coalescing operator `??` (PHP 7+) must not be used. Use `isset($x) ? $x : $default`.
 - **`framework-version` is `1`.** Do not bump it to reach a newer External Modules API — that is a breaking change needing its own decision.
 - **Designer JavaScript lives inside a PHP heredoc.** `getOnlineDesignerSection()` returns a `<<<EOD ... EOD;` block containing the entire Online Designer UI. PHP interpolates `$name` inside heredocs, so `$('#id')` and `$('<tr>')` are safe (a `(` cannot begin a PHP identifier) but any new JS variable written as `$foo` would be silently eaten by PHP. Declare JS locals as `var foo`. `php -l` will not catch an interpolation mistake — re-read the diff.
+- **`$lookup` and `$expand` contain a `$`.** Inside double quotes PHP
+  interpolates them as undefined variables, silently producing `/CodeSystem/?`.
+  Use single quotes or `\$`. `php -l` will not catch this.
 
 ## Architecture
 

@@ -100,6 +100,20 @@ This dropdown controls the use of search by 'LOINC implicit answer set' and is n
 of LOINC in different servers. 
 
 
+### v0.6.0
+
+- **New: concept enrichment via `CodeSystem/$lookup`.** The `@FHIR-LOOKUP` field
+  annotation copies the fully specified name, preferred term, semantic tag,
+  concept status, normal form, and named SNOMED attribute relationships of the
+  selected concept into other fields.
+- Values are written both in the browser on selection and again server-side on
+  save. The server-side write is authoritative, so imports and API writes are
+  enriched too.
+- A failed or unavailable lookup writes nothing and never clears existing values.
+- Adds the `redcap_save_record` permission.
+- Adds `ConceptEnrichment.php`, `ConceptLookupService.php`, and the repository's
+  first automated tests.
+
 ## Using the module
 The module code needs to be placed in a directory `modules/fhir-ontology-provider_v0.5`
 
@@ -165,6 +179,46 @@ field. The module will not try to expand piped variables in the choice list.
 ```text
 @HIDECHOICE='code1,code2'
 ```
+
+### `@FHIR-LOOKUP` — populate other fields from the selected concept
+
+Add this to the **Field Annotation** of an ontology field to copy details of the
+selected concept into other fields on the same instrument.
+
+```
+@FHIR-LOOKUP='fsn:dx_fsn, semtag:dx_semtag, status:dx_status,
+              363698007:dx_finding_site, 116676008:dx_morphology'
+```
+
+Each entry is `source:target_field`.
+
+| Source | What is written | Example |
+|---|---|---|
+| `fsn` | Fully specified name | `Pneumonia (disorder)` |
+| `pt` | Preferred term | `Pneumonia` |
+| `semtag` | Semantic tag from the FSN | `disorder` |
+| `status` | Concept status | `active`, `inactive`, `unknown` |
+| `normalform` | The SNOMED normal form, verbatim | `128601007\|Infectious disease of lung\|…` |
+| a SNOMED attribute id | That attribute's value as `code\|display` | `113255004\|Structure of parenchyma of lung (body structure)` |
+
+Notes:
+
+- The tag is repeatable, so long mappings can be split across several tags.
+- A malformed entry is skipped on its own; valid entries around it still work.
+- Target fields must be on the **same instrument** (form) as the ontology field.
+  A target on a different form is silently ignored.
+- Target fields should carry `@READONLY` so users cannot edit values the
+  terminology server supplied.
+- Use a **Text** field for `fsn`, `pt`, `semtag`, and `status`. Use a **Notes Box**
+  for attribute targets. When a concept has an attribute more than once — most
+  surgical procedures do — every distinct value is stored, joined with `; `, which
+  can exceed 200 characters.
+- When a concept is **inactive** the terminology server returns no normal form.
+  `fsn`, `pt`, `semtag` and `status` are still written; attribute targets are
+  left exactly as they were.
+- If the terminology server is unreachable, or the code is not in the server's
+  edition, **nothing is written and existing values are left alone.** Enrichment
+  never blanks a field because of an outage.
 
 
 ### Label Cache Issue
