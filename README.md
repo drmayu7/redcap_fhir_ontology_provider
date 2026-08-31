@@ -22,9 +22,11 @@ In version 0.4 of this module, limited support for @HIDECHOICE was added.
   annotation copies the fully specified name, preferred term, semantic tag,
   concept status, normal form, and named SNOMED attribute relationships of the
   selected concept into other fields.
-- Values are written both in the browser on selection and again server-side on
-  save. The server-side write is authoritative, so imports and API writes are
-  enriched too.
+- On **data entry forms** the values appear in the browser as soon as the concept
+  is selected, and are written again server-side when the record is saved. On
+  **surveys** there is no immediate fill; the fields populate when the response
+  is saved. The server-side write is authoritative either way, so imports and
+  API writes are enriched too.
 - A failed or unavailable lookup writes nothing and never clears existing values.
 - Adds the `redcap_save_record` permission.
 - Adds `ConceptEnrichment.php`, `ConceptLookupService.php`, and the repository's
@@ -219,7 +221,12 @@ Notes:
   left exactly as they were.
 - If the terminology server is unreachable, or the code is not in the server's
   edition, **nothing is written and existing values are left alone.** Enrichment
-  never blanks a field because of an outage.
+  never blanks a field because of an outage. Likewise, if the server answers but
+  omits a detail, only the target for that detail is left alone; the others are
+  still written.
+- On **data entry forms** the target fields fill in as soon as a concept is
+  picked. On **surveys** they fill in when the response is saved, not while the
+  respondent is typing.
 
 
 ### Label Cache Issue

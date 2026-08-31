@@ -100,9 +100,15 @@ class ConceptEnrichment
     /**
      * Extract the scalar properties from a decoded CodeSystem/$lookup response.
      *
-     * 'found' is false for anything that is not a Parameters resource - notably
-     * the 404 OperationOutcome returned for an unknown code. Callers must treat
-     * found=false as "write nothing", never as "the concept has no properties".
+     * 'found' is false for anything that is not a Parameters resource - the
+     * resourceType must literally be "Parameters" and a parameter list must be
+     * present, so the 404 OperationOutcome returned for an unknown code is
+     * rejected on both counts. Callers must treat found=false as "write
+     * nothing", never as "the concept has no properties".
+     *
+     * A property that the response does not mention is left null. Null means
+     * "the server said nothing about this", which is NOT the same as "the
+     * concept does not have it" - see buildTargets().
      *
      * @param array $decoded json_decode($response, true)
      * @return array with keys found, fsn, pt, semtag, status, normalform
@@ -111,7 +117,9 @@ class ConceptEnrichment
     {
         $out = array('found' => false, 'fsn' => null, 'pt' => null,
                      'semtag' => null, 'status' => null, 'normalform' => null);
-        if (!is_array($decoded) || !isset($decoded['parameter']) || !is_array($decoded['parameter'])) {
+        if (!is_array($decoded) || !isset($decoded['resourceType'])
+                || 'Parameters' !== $decoded['resourceType']
+                || !isset($decoded['parameter']) || !is_array($decoded['parameter'])) {
             return $out;
         }
         $out['found'] = true;
@@ -226,10 +234,17 @@ class ConceptEnrichment
      * INCLUDING blanking ones the concept does not have - otherwise changing a
      * field from Pneumonia to Appendectomy would leave a lung structure behind.
      *
-     * The one exception is an inactive concept, which carries no normal form.
-     * Absence of a normal form is not evidence of absent attributes, so
-     * attribute targets are omitted from the result entirely and the caller
-     * leaves whatever is already stored alone.
+     * That blanking is only ever done from evidence. Two cases are therefore
+     * omitted from the result entirely, leaving whatever is already stored
+     * alone:
+     *
+     *  - An inactive concept carries no normal form. Absence of a normal form
+     *    is not evidence of absent attributes, so every attribute target is
+     *    omitted. When a normal form IS present, a mapped attribute missing
+     *    from it is genuinely absent and IS blanked.
+     *  - A scalar source (fsn, pt, semtag, status, normalform) that the
+     *    response did not carry is omitted rather than blanked - a well-formed
+     *    but incomplete 200 must not erase good data.
      *
      * An empty result means "write nothing" and is returned for any response
      * that is not a Parameters resource.
@@ -260,7 +275,19 @@ class ConceptEnrichment
                     : '';
             } else {
                 $value = isset($props[$source]) ? $props[$source] : null;
-                $targets[$field] = (null === $value) ? '' : $value;
+                if (null === $value) {
+                    // Absence of a datum in the response is not evidence that
+                    // the concept lacks it: a well-formed but incomplete 200
+                    // (no designations, no inactive property) would otherwise
+                    // blank fsn/semtag/status across the database with no
+                    // outage involved. Every real SNOMED concept has an FSN,
+                    // and therefore a semantic tag, and a display, so skipping
+                    // loses nothing real while blanking is an authoritative
+                    // erasure. Attribute sources above are guarded the same way
+                    // by $hasNormalForm.
+                    continue;
+                }
+                $targets[$field] = $value;
             }
         }
         return $targets;

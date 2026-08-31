@@ -184,6 +184,73 @@ assertSame(array(), $t, 'buildTargets: not-found response writes nothing');
 $t = ConceptEnrichment::buildTargets(fixture('233604007'), array('normalform' => 'dx_nf'));
 assertTrue(false !== strpos($t['dx_nf'], '363698007'), 'buildTargets: normalform stored verbatim');
 
+// --- incomplete but successful responses ------------------------------------
+// A well-formed 200 Parameters that simply omits designations and the inactive
+// property. Absence of a datum is not evidence the concept lacks it, so those
+// targets must be skipped, not blanked. Built inline: no fixture models a
+// deliberately impoverished server.
+
+$partial = array(
+    'resourceType' => 'Parameters',
+    'parameter' => array(
+        array('name' => 'name', 'valueString' => 'SNOMED CT'),
+        array('name' => 'display', 'valueString' => 'Pneumonia'),
+    ),
+);
+
+$p = ConceptEnrichment::extractProperties($partial);
+assertTrue($p['found'], 'extractProperties: incomplete Parameters is still found');
+assertSame('Pneumonia', $p['pt'], 'extractProperties: incomplete response still yields pt');
+assertSame(null, $p['fsn'], 'extractProperties: absent designation leaves fsn null');
+assertSame(null, $p['semtag'], 'extractProperties: absent designation leaves semtag null');
+assertSame(null, $p['status'], 'extractProperties: absent inactive property leaves status null');
+
+$partialMap = array('fsn' => 'dx_fsn', 'pt' => 'dx_pt', 'semtag' => 'dx_tag',
+                    'status' => 'dx_status', '363698007' => 'dx_site');
+$t = ConceptEnrichment::buildTargets($partial, $partialMap);
+assertSame('Pneumonia', $t['dx_pt'], 'buildTargets: present scalar still written on incomplete response');
+assertTrue(!array_key_exists('dx_fsn', $t),
+    'buildTargets: absent fsn is skipped, not blanked');
+assertTrue(!array_key_exists('dx_tag', $t),
+    'buildTargets: absent semtag is skipped, not blanked');
+assertTrue(!array_key_exists('dx_status', $t),
+    'buildTargets: absent status is skipped, not blanked');
+assertTrue(!array_key_exists('dx_site', $t),
+    'buildTargets: no normal form means attribute targets untouched');
+
+// --- resourceType gating ----------------------------------------------------
+// A body carrying a "parameter" key is not automatically a Parameters resource.
+
+$wrongType = array(
+    'resourceType' => 'Bundle',
+    'parameter' => array(
+        array('name' => 'display', 'valueString' => 'Not a lookup result'),
+    ),
+);
+$p = ConceptEnrichment::extractProperties($wrongType);
+assertSame(false, $p['found'], 'extractProperties: wrong resourceType is not found');
+assertSame(array(), ConceptEnrichment::buildTargets($wrongType, $map),
+    'buildTargets: wrong resourceType writes nothing');
+
+$noType = array(
+    'parameter' => array(
+        array('name' => 'display', 'valueString' => 'Not a lookup result'),
+    ),
+);
+$p = ConceptEnrichment::extractProperties($noType);
+assertSame(false, $p['found'], 'extractProperties: missing resourceType is not found');
+assertSame(array(), ConceptEnrichment::buildTargets($noType, $map),
+    'buildTargets: missing resourceType writes nothing');
+
+// --- regression guards for the behaviour that must NOT change ---------------
+
+$t = ConceptEnrichment::buildTargets(fixture('233604007'), $map);
+assertSame('Pneumonia (disorder)', $t['dx_fsn'], 'regression: complete response still writes fsn');
+assertSame('disorder', $t['dx_tag'], 'regression: complete response still writes semtag');
+assertSame('active', $t['dx_status'], 'regression: complete response still writes status');
+assertSame('', $t['dx_method'],
+    'regression: normal form present, mapped attribute absent, still blanked');
+
 echo "\n";
 if ($GLOBALS['tests_failed'] > 0) {
     echo "FAILED ({$GLOBALS['tests_failed']} failed, {$GLOBALS['tests_passed']} passed)\n";

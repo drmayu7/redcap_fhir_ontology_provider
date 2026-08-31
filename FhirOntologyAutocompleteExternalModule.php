@@ -1099,7 +1099,9 @@ EOD;
         $this->recordFhirSuccess();
 
         $decoded = json_decode($response, true);
-        if (!is_array($decoded) || !isset($decoded['parameter'])) {
+        if (!is_array($decoded) || !isset($decoded['resourceType'])
+                || 'Parameters' !== $decoded['resourceType']
+                || !isset($decoded['parameter'])) {
             // an OperationOutcome (unknown code) or unparseable body - a fast,
             // definitive answer, so recordFhirFailureIfSlow above correctly
             // leaves the breaker alone
