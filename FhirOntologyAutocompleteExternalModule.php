@@ -212,29 +212,42 @@ EOD;
         // may legitimately fall through to the flat location even when a
         // repeat instance was passed in, and because a repeating EVENT nests
         // under an empty instrument key rather than under $instrument.
-        $payload = array();
+        $payloads = array();
         foreach ($writes as $slot => $fieldValues) {
             if (!$fieldValues) {
                 continue;
             }
             $loc = $locations[$slot];
             if ($loc['repeating']) {
-                $payload[$record]['repeat_instances'][$loc['event_id']][$loc['instrument']][$loc['instance']]
-                    = $fieldValues;
+                $payloads[] = array($record => array(
+                    'repeat_instances' => array(
+                        $loc['event_id'] => array(
+                            $loc['instrument'] => array($loc['instance'] => $fieldValues)
+                        )
+                    )
+                ));
             } else {
-                $payload[$record][$loc['event_id']] = $fieldValues;
+                $payloads[] = array($record => array($loc['event_id'] => $fieldValues));
             }
         }
 
-        if (!$payload) {
+        if (!$payloads) {
             return;
         }
 
+        // One saveData() call per slot, deliberately. Merging slots would put a
+        // flat row and a repeat_instances row inside the same record entry, and
+        // whether saveData() tolerates that mixed shape cannot be verified
+        // without a REDCap instance. One call per slot means every call carries
+        // exactly one of the two documented shapes.
+        $results = array();
         $inProgress = true;
-        $result = \REDCap::saveData($project_id, 'array', $payload);
+        foreach ($payloads as $payload) {
+            $results[] = \REDCap::saveData($project_id, 'array', $payload);
+        }
         $inProgress = false;
 
-        return $result;
+        return $results;
     }
 
 
