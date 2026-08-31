@@ -154,20 +154,36 @@ EOD;
             'return_format' => 'array'
         ));
 
+        // Writes are grouped by the location the source value was READ from, so
+        // a value can never be read from one row and written into another.
         $writes = array();
+        $locations = array();
         foreach ($fields as $field => $mapping) {
-            $stored = $this->extractSavedValue($data, $record, $event_id, $field, $repeat_instance);
-            if (false === $stored) {
+            $hit = $this->extractSavedValue($data, $record, $event_id, $field, $repeat_instance);
+            if (false === $hit) {
                 // Not found in the getData() result. That is not evidence the user
                 // cleared the concept - getData()'s shape is unverified against a live
                 // REDCap - so write nothing rather than risk erasing good enrichment.
                 continue;
             }
+            $stored = $hit['value'];
+            $slot = $hit['repeating']
+                  ? 'r|' . $hit['event_id'] . '|' . $hit['instrument'] . '|' . $hit['instance']
+                  : 'f|' . $hit['event_id'];
+            if (!isset($writes[$slot])) {
+                $writes[$slot] = array();
+                $locations[$slot] = $hit;
+            }
             if ('' === $stored) {
                 // concept genuinely cleared - blank every target it maps to
                 foreach ($mapping as $target) {
-                    $writes[$target] = '';
+                    $writes[$slot][$target] = '';
                 }
+                continue;
+            }
+            if (!is_string($stored)) {
+                // A non-string here would make explode() raise a TypeError on
+                // PHP 8 and abort the whole save hook.
                 continue;
             }
             $parts = explode('|', $stored);
@@ -180,26 +196,38 @@ EOD;
                 continue;
             }
             foreach ($targets as $target => $value) {
-                $writes[$target] = $value;
+                if (!in_array($target, $mapping, true)) {
+                    // getEnrichmentFields() already dropped cross-form targets;
+                    // this keeps the success path in step with the blank path.
+                    continue;
+                }
+                $writes[$slot][$target] = $value;
             }
         }
 
-        if (!$writes) {
-            return;
+        // REDCap's 'array' format is [record][event_id][field], with repeating
+        // instruments and repeating events nested under a 'repeat_instances'
+        // key instead. The shape is chosen per slot from where the value was
+        // found - never from $repeat_instance - because extractSavedValue()
+        // may legitimately fall through to the flat location even when a
+        // repeat instance was passed in, and because a repeating EVENT nests
+        // under an empty instrument key rather than under $instrument.
+        $payload = array();
+        foreach ($writes as $slot => $fieldValues) {
+            if (!$fieldValues) {
+                continue;
+            }
+            $loc = $locations[$slot];
+            if ($loc['repeating']) {
+                $payload[$record]['repeat_instances'][$loc['event_id']][$loc['instrument']][$loc['instance']]
+                    = $fieldValues;
+            } else {
+                $payload[$record][$loc['event_id']] = $fieldValues;
+            }
         }
 
-        // REDCap's 'array' format is [record][event_id][field], with repeating
-        // instruments nested under a 'repeat_instances' key instead.
-        if ($repeat_instance) {
-            $payload = array($record => array(
-                'repeat_instances' => array(
-                    $event_id => array(
-                        $instrument => array($repeat_instance => $writes)
-                    )
-                )
-            ));
-        } else {
-            $payload = array($record => array($event_id => $writes));
+        if (!$payload) {
+            return;
         }
 
         $inProgress = true;
@@ -1073,6 +1101,15 @@ EOD;
         if (null === $metadata) {
             $metadata = \REDCap::getDataDictionary($project_id, 'array', false, null, array($instrument));
         }
+        // Which fields live on the instrument being saved. Built from the whole
+        // metadata set before the per-field filter below, because it is used to
+        // vet TARGET fields, not just source fields.
+        $onInstrument = array();
+        foreach ($metadata as $fieldName => $attrs) {
+            if (!isset($attrs['form_name']) || $attrs['form_name'] === $instrument) {
+                $onInstrument[$fieldName] = true;
+            }
+        }
         foreach ($metadata as $fieldName => $attrs) {
             if (isset($attrs['form_name']) && $attrs['form_name'] !== $instrument) {
                 continue;
@@ -1082,6 +1119,15 @@ EOD;
                 continue;
             }
             $mapping = ConceptEnrichment::parseMapping($annotation, $fieldName);
+            // A target on another form is intentionally ignored: one saveData()
+            // payload row addresses exactly one instrument/instance, so writing
+            // a cross-form target here would put it in the wrong row. Skipping
+            // it leaves the existing value untouched, which is the safe default.
+            foreach ($mapping as $key => $target) {
+                if (!isset($onInstrument[$target])) {
+                    unset($mapping[$key]);
+                }
+            }
             if ($mapping) {
                 $found[$fieldName] = $mapping;
             }
@@ -1090,16 +1136,23 @@ EOD;
     }
 
     /**
-     * Pull one field's saved value out of a REDCap::getData() array result.
+     * Pull one field's saved value out of a REDCap::getData() array result,
+     * together with the location it was found at.
      *
      * Returns false when the field is not present in the result structure at
-     * all. That is deliberately distinct from '', which means the field is
-     * present and empty, i.e. the user genuinely cleared the concept. Callers
-     * MUST compare with === : under PHP's loose comparison false == '' is
-     * true, and conflating the two would let an unexpected getData() shape
-     * blank every enrichment target.
+     * all. That is deliberately distinct from a hit carrying value '', which
+     * means the field is present and empty, i.e. the user genuinely cleared
+     * the concept. Callers MUST compare the return with === false: under PHP's
+     * loose comparison false == '' is true, and conflating the two would let
+     * an unexpected getData() shape blank every enrichment target.
      *
-     * @return string|false the stored value, or false when not found
+     * The location is reported rather than re-derived by the caller so the
+     * write lands in exactly the row the read came from. 'instrument' is the
+     * ACTUAL key matched under repeat_instances, not the instrument being
+     * saved - REDCap nests repeating EVENTS under an empty instrument key.
+     *
+     * @return array|false array(value, repeating, event_id, instrument, instance)
+     *                     or false when not found
      */
     private function extractSavedValue($data, $record, $event_id, $field, $repeat_instance)
     {
@@ -1108,14 +1161,26 @@ EOD;
         }
         $recordData = $data[$record];
         if ($repeat_instance && isset($recordData['repeat_instances'][$event_id])) {
-            foreach ($recordData['repeat_instances'][$event_id] as $instances) {
+            foreach ($recordData['repeat_instances'][$event_id] as $instrumentKey => $instances) {
                 if (isset($instances[$repeat_instance][$field])) {
-                    return $instances[$repeat_instance][$field];
+                    return array(
+                        'value' => $instances[$repeat_instance][$field],
+                        'repeating' => true,
+                        'event_id' => $event_id,
+                        'instrument' => $instrumentKey,
+                        'instance' => $repeat_instance
+                    );
                 }
             }
         }
         if (isset($recordData[$event_id][$field])) {
-            return $recordData[$event_id][$field];
+            return array(
+                'value' => $recordData[$event_id][$field],
+                'repeating' => false,
+                'event_id' => $event_id,
+                'instrument' => null,
+                'instance' => null
+            );
         }
         return false;
     }
