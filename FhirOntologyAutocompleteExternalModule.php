@@ -100,11 +100,21 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
                   data: { field: field, value: value }
               }).done(function(targets) {
                   if (!targets) { return; }
-                  // a 502 OperationOutcome must never overwrite stored values
+                  // Belt-and-braces only: the service signals failure with HTTP
+                  // 502, which jQuery routes to .fail(), not .done(). This guard
+                  // is not the actual 502 handling path - it just protects
+                  // against a future change that returns the outcome with a
+                  // 200 status instead.
                   if (targets.resourceType === 'OperationOutcome') { return; }
                   for (var name in targets) {
                       if (!targets.hasOwnProperty(name)) { continue; }
-                      var input = $('[name="' + name + '"]');
+                      // A radio/checkbox group shares one name across all its
+                      // options, and .val() on those rewrites each option's
+                      // value attribute rather than selecting one - which
+                      // corrupts the group in the DOM. Enrichment targets are
+                      // documented as Text or Notes Box fields, so skip
+                      // anything that is not safe to set directly.
+                      var input = $('[name="' + name + '"]').not(':radio').not(':checkbox');
                       if (input.length) {
                           input.val(targets[name]).trigger('change');
                       }
