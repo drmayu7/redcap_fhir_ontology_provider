@@ -326,45 +326,68 @@ EOD;
         return array_slice($results, 0, $result_limit, true);
     }
 
-    function getHideChoice()
+    /**
+     * Fetch a field's annotation text, preferring the in-memory project object.
+     *
+     * Extracted from getHideChoice() so the save-record path can reuse it -
+     * that path has no $_GET to read the field name from.
+     *
+     * @param int|string|null $project_id
+     * @param string $field
+     * @return string|null the annotation, or null when unavailable
+     */
+    public function getFieldAnnotation($project_id, $field)
     {
-        // $Proj must be pulled in explicitly. Without this it is always null inside
-        // the method, so the in-memory fast path below never runs and every single
-        // keystroke falls through to a full getDataDictionary() call.
+        // $Proj must be pulled in explicitly. Without this it is always null
+        // inside the method, so the in-memory path below never runs and every
+        // single keystroke falls through to a full getDataDictionary() call.
         global $Proj;
-        // one lookup per request per field - autocomplete fires this on every keystroke
+        // one lookup per request per field - autocomplete fires on every keystroke
         static $cache = array();
 
-        $codesToHide=[];
-        if (isset($_GET['field'])){
+        $cacheKey = $project_id . '|' . $field;
+        if (array_key_exists($cacheKey, $cache)) {
+            return $cache[$cacheKey];
+        }
+        $annotation = null;
+        if (($project_id === null || (isset($Proj->project_id) && (string)$Proj->project_id === (string)$project_id))
+                && isset($Proj->metadata[$field])) {
+            // field_annotation is NULL for un-annotated fields, which is the
+            // common case - take the in-memory path on field presence, not on
+            // the annotation existing, or every un-annotated field falls back
+            // to a full dictionary load
+            $annotation = isset($Proj->metadata[$field]['field_annotation'])
+                ? $Proj->metadata[$field]['field_annotation']
+                : null;
+        } elseif ($project_id !== null) {
+            $dd_array = \REDCap::getDataDictionary($project_id, 'array', false, array($field));
+            $annotation = isset($dd_array[$field]['field_annotation'])
+                ? $dd_array[$field]['field_annotation']
+                : null;
+        }
+        $cache[$cacheKey] = $annotation;
+        return $annotation;
+    }
+
+    function getHideChoice()
+    {
+        static $cache = array();
+
+        $codesToHide = [];
+        if (isset($_GET['field'])) {
             $field = $_GET['field'];
             $project_id = isset($_GET['pid']) ? $_GET['pid'] : null;
             $cacheKey = $project_id . '|' . $field;
             if (isset($cache[$cacheKey])) {
                 return $cache[$cacheKey];
             }
-            $annotations = null;
-            if (($project_id === null || (isset($Proj->project_id) && (string)$Proj->project_id === (string)$project_id))
-                    && isset($Proj->metadata[$field])) {
-                // field_annotation is NULL for un-annotated fields, which is the common
-                // case - take the in-memory path on field presence, not on the annotation
-                // existing, or every un-annotated field falls back to a full dictionary load
-                $annotations = isset($Proj->metadata[$field]['field_annotation'])
-                    ? $Proj->metadata[$field]['field_annotation']
-                    : null;
-            }
-            else if ($project_id !== null){
-                $dd_array = \REDCap::getDataDictionary($project_id, 'array', false, array($field));
-                $annotations = isset($dd_array[$field]['field_annotation'])
-                    ? $dd_array[$field]['field_annotation']
-                    : null;
-            }
+            $annotations = $this->getFieldAnnotation($project_id, $field);
             if ($annotations) {
                 $offset = 0;
-                while (preg_match("/@HIDECHOICE='([^']*)'/", $annotations, $matches, PREG_OFFSET_CAPTURE, $offset) === 1){
+                while (preg_match("/@HIDECHOICE='([^']*)'/", $annotations, $matches, PREG_OFFSET_CAPTURE, $offset) === 1) {
                     $listedCodesStr = $matches[1][0];
                     $listedCodes = explode(',', $listedCodesStr);
-                    foreach($listedCodes as $code){
+                    foreach ($listedCodes as $code) {
                         array_push($codesToHide, trim($code));
                     }
                     $offset = $matches[0][1] + strlen($matches[0][0]);
