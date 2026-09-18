@@ -1,0 +1,75 @@
+{
+  "planPath": "docs/superpowers/plans/2026-09-04-pr5-review-response.md",
+  "tasks": [
+    {
+      "id": 1,
+      "subject": "Task 1: Rebase onto current upstream main",
+      "status": "completed",
+      "description": "**Goal:** Make the working branch merge cleanly against upstream, and get Psalm runnable locally so later tasks can pre-empt the CI security scan.\n\n**Files:**\n- Modify: `README.md` (conflict resolution only)\n- Modify: `config.json` (conflict resolution only)\n- Modify: `.gitignore` (conflict resolution only)\n\n**Acceptance Criteria:**\n- [ ] An `upstream` remote pointing at aehrc/redcap_fhir_ontology_provider exists\n- [ ] Branch contains every commit from `upstream/main` (composer.json, psalm.xml, stubs/, CHANGELOG.md)\n- [ ] No conflict markers remain in any file\n- [ ] config.json still declares framework-version 1, php-version-min 5.4.0, redcap-version-min 8.8.1\n- [ ] `php -l` clean on both PHP files and config.json parses\n- [ ] Psalm runs and its findings are recorded as the pre-change baseline\n\n**Verify:** `php -l FhirOntologyAutocompleteExternalModule.php && php -l FindValueSetService.php && python3 -c \"import json;json.load(open('config.json'))\" && git log --oneline -1 upstream/main` -> all clean, no conflict markers\n\n```json:metadata\n{\"files\": [\"README.md\", \"config.json\", \".gitignore\"], \"verifyCommand\": \"php -l FhirOntologyAutocompleteExternalModule.php && php -l FindValueSetService.php && python3 -c \\\"import json;json.load(open('config.json'))\\\"\", \"acceptanceCriteria\": [\"no conflict markers remain\", \"framework-version still 1\", \"psalm baseline recorded\"], \"modelTier\": \"standard\"}\n```"
+    },
+    {
+      "id": 2,
+      "subject": "Task 2: Test harness and request policy class",
+      "status": "completed",
+      "blockedBy": [
+        1
+      ],
+      "description": "**Goal:** Create this branch's first automated verification - a dependency-free PHP test runner - and extract the timeout and circuit-breaker decisions into pure, testable functions.\n\n**Files:**\n- Create: `FhirRequestPolicy.php`\n- Create: `tests/run.php`\n\n**Acceptance Criteria:**\n- [ ] Runner provides assertSame, assertTrue, assertFalse and records pass/fail\n- [ ] Runner exits 0 on pass, 1 on fail, and prints a summary line\n- [ ] resolveTimeout() returns the setting when numeric and positive; default for blank, zero, negative, non-numeric\n- [ ] countsAsFailure() true at and above 80% of timeout, false below\n- [ ] isOpen() false when openUntil is 0, true inside window, false at or after expiry\n- [ ] needsRearm() true only when a non-zero window has elapsed\n- [ ] opensBreaker() true at and above threshold\n- [ ] No composer, no PHPUnit, no external dependency introduced\n- [ ] No `??`, no `::class`, no `fn()`\n\n**Verify:** `php -l FhirRequestPolicy.php && php tests/run.php` -> `OK (26 assertions)`, exit code 0\n\n```json:metadata\n{\"files\": [\"FhirRequestPolicy.php\", \"tests/run.php\"], \"verifyCommand\": \"php -l FhirRequestPolicy.php && php tests/run.php\", \"acceptanceCriteria\": [\"runner exits 0 on pass and 1 on fail\", \"timeout and breaker decisions are pure functions\", \"no composer or PHPUnit introduced\", \"no PHP 7+ constructs\"], \"modelTier\": \"standard\"}\n```"
+    },
+    {
+      "id": 3,
+      "subject": "Task 3: Delegate breaker and correct false claim",
+      "status": "completed",
+      "blockedBy": [
+        2
+      ],
+      "description": "**Goal:** Replace the circuit breaker's inline decisions with calls into FhirRequestPolicy, and rewrite the docblock that asserts a concurrency guarantee the code does not provide.\n\n**Files:**\n- Modify: `FhirOntologyAutocompleteExternalModule.php` (constants ~line 34; getFhirTimeout ~861; isCircuitOpen ~876; recordFhirFailure ~892; recordFhirFailureIfSlow ~906)\n\n**Acceptance Criteria:**\n- [ ] The four methods contain no inline arithmetic or comparisons - every decision is a FhirRequestPolicy:: call\n- [ ] Settings reads and writes stay in the module; the policy class performs no I/O\n- [ ] isCircuitOpen() docblock no longer claims \"exactly one concurrent request is allowed through\"\n- [ ] Replacement docblock states concurrent callers may each admit a probe and concurrent failures may undercount\n- [ ] External behaviour unchanged - same thresholds, window, and 80% rule\n- [ ] The module require_once's FhirRequestPolicy.php\n- [ ] Duplicated constants removed from the module class with no stale references\n- [ ] `php -l` clean; tests still exit 0\n\n**Verify:** `php -l FhirOntologyAutocompleteExternalModule.php && php tests/run.php && grep -c 'exactly one' FhirOntologyAutocompleteExternalModule.php` -> no syntax errors, `OK (26 assertions)`, grep count 0\n\n```json:metadata\n{\"files\": [\"FhirOntologyAutocompleteExternalModule.php\"], \"verifyCommand\": \"php -l FhirOntologyAutocompleteExternalModule.php && php tests/run.php\", \"acceptanceCriteria\": [\"false atomicity claim removed\", \"decisions delegated to FhirRequestPolicy\", \"external behaviour unchanged\", \"no stale constant references\"], \"modelTier\": \"standard\"}\n```"
+    },
+    {
+      "id": 4,
+      "subject": "Task 4: Remove dead getHideChoice() cache",
+      "status": "completed",
+      "blockedBy": [
+        3
+      ],
+      "description": "**Goal:** Delete a static cache that is written and never read, and the comment claiming a per-keystroke benefit it cannot deliver.\n\n**Files:**\n- Modify: `FhirOntologyAutocompleteExternalModule.php` (getHideChoice, ~line 329)\n\n**Acceptance Criteria:**\n- [ ] `static $cache`, `$cacheKey`, the cache read and the cache write are gone\n- [ ] `global $Proj` is retained\n- [ ] The `$Proj->metadata[$field]` fast path and the getDataDictionary() fallback are unchanged\n- [ ] The misleading \"one lookup per request per field\" comment is gone\n- [ ] `php -l` clean\n\n**Verify:** `php -l FhirOntologyAutocompleteExternalModule.php && grep -c 'static $cache' FhirOntologyAutocompleteExternalModule.php` -> no syntax errors, grep count 0\n\n```json:metadata\n{\"files\": [\"FhirOntologyAutocompleteExternalModule.php\"], \"verifyCommand\": \"php -l FhirOntologyAutocompleteExternalModule.php && php tests/run.php\", \"acceptanceCriteria\": [\"static cache fully removed\", \"global $Proj retained\", \"fast path and fallback unchanged\"], \"modelTier\": \"mechanical\"}\n```"
+    },
+    {
+      "id": 5,
+      "subject": "Task 5: URL containment check",
+      "status": "completed",
+      "blockedBy": [
+        4
+      ],
+      "description": "**Goal:** Add a pure function deciding whether a request URL stays within the configured FHIR base, so the module-owned curl in Task 7 has a real SSRF defence rather than a taint suppression.\n\n**Files:**\n- Modify: `FhirRequestPolicy.php`\n- Modify: `tests/run.php`\n\n**Acceptance Criteria:**\n- [ ] A URL under the configured base is accepted\n- [ ] A different host is rejected\n- [ ] A scheme change (https base, http request) is rejected\n- [ ] A different port is rejected, including an explicit port differing from the base's implicit default\n- [ ] A URL carrying embedded credentials (user:pass@) is rejected\n- [ ] A path outside the base path is rejected, including the sibling-prefix case (/fhirX against base /fhir)\n- [ ] Non-string, empty and unparseable input is rejected\n- [ ] Tests exit 0\n\n**Verify:** `php -l FhirRequestPolicy.php && php tests/run.php` -> `OK (40 assertions)`, exit code 0\n\n```json:metadata\n{\"files\": [\"FhirRequestPolicy.php\", \"tests/run.php\"], \"verifyCommand\": \"php -l FhirRequestPolicy.php && php tests/run.php\", \"acceptanceCriteria\": [\"different host rejected\", \"scheme downgrade rejected\", \"sibling prefix /fhirX rejected against /fhir\", \"embedded credentials rejected\"], \"modelTier\": \"standard\"}\n```"
+    },
+    {
+      "id": 6,
+      "subject": "Task 6: Rework README for release-please",
+      "status": "completed",
+      "blockedBy": [
+        5
+      ],
+      "description": "**Goal:** Stop the README asserting version numbers that release-please now owns, and correct the two claims the review showed to be wrong.\n\n**Files:**\n- Modify: `README.md`\n\n**Acceptance Criteria:**\n- [ ] Version-asserting changelog headings replaced by headings describing the change\n- [ ] The `modules/fhir-ontology-provider_v0.5.2` deployment instruction replaced by a version-agnostic note\n- [ ] The credential-masking caveat survives in full: password does not migrate, must be re-entered immediately, failure is silent (empty dropdown, no error)\n- [ ] The circuit-breaker paragraph no longer implies a single guaranteed probe\n- [ ] The @HIDECHOICE paragraph does not claim a per-keystroke cache\n- [ ] Upstream's CHANGELOG link and typo fixes from the rebase are preserved\n- [ ] No claim about the timeout is strengthened here - Task 7 owns that wording\n\n**Verify:** `grep -n 'v0\\.5\\.2\\|v0\\.5\\.1\\|Version 0\\.5' README.md` -> no version-asserting changelog headings remain; manual read confirms the masking caveat is intact\n\n```json:metadata\n{\"files\": [\"README.md\"], \"verifyCommand\": \"grep -n 'Version 0.5\\\\|fhir-ontology-provider_v0' README.md || echo 'no version-asserting headings'\", \"acceptanceCriteria\": [\"no version-asserting changelog headings\", \"masking caveat intact\", \"breaker single-probe claim corrected\", \"upstream CHANGELOG link preserved\"], \"modelTier\": \"standard\"}\n```"
+    },
+    {
+      "id": 7,
+      "subject": "Task 7a: wire SSRF guard + narrow timeout claim (curl rewrite deferred)",
+      "status": "completed",
+      "blockedBy": [
+        6
+      ],
+      "description": "**Goal:** Give outbound FHIR requests a real end-to-end timeout by issuing curl from the module instead of delegating to REDCap core, which sets only CURLOPT_CONNECTTIMEOUT. BLOCKED: do not begin until the maintainer answers the TLS question on PR #5. If unanswered, STOP and ask the user whether to wait or ship Tasks 1-6 with the timeout claim narrowed. Do not guess the TLS setting.\n\n**Files:**\n- Modify: `FhirOntologyAutocompleteExternalModule.php` (httpGet ~923, httpPost ~959)\n- Modify: `README.md`\n\n**Acceptance Criteria:**\n- [ ] The maintainer's TLS answer is recorded in the commit message and the SSL_VERIFYPEER/VERIFYHOST values match it\n- [ ] A single private fhirRequest() performs every outbound request; httpGet and httpPost are thin wrappers\n- [ ] Both CURLOPT_CONNECTTIMEOUT and CURLOPT_TIMEOUT are set from getFhirTimeout()\n- [ ] CURLOPT_FOLLOWLOCATION is false so a redirect cannot escape the containment check\n- [ ] Every request is checked with isWithinBase() against getFhirServerUri(), except the OAuth2 token endpoint which matches its own setting\n- [ ] A request failing containment returns false without dialling out\n- [ ] Proxy support mirrors the existing fallback (sameHostUrl, PROXY_HOSTNAME, PROXY_USERNAME_PASSWORD)\n- [ ] The file_get_contents fallback is retained unchanged as streamRequest()\n- [ ] The Content-type header workaround in the old httpPost is removed\n- [ ] curl_close() runs on every path including failure\n- [ ] Psalm reports no new TaintedSSRF relative to the Task 1 baseline\n- [ ] README timeout paragraph updated to describe a true end-to-end bound\n- [ ] `php -l` clean; tests exit 0\n\n**Verify:** `php -l FhirOntologyAutocompleteExternalModule.php && php tests/run.php && vendor/bin/psalm --taint-analysis --no-progress` -> no syntax errors, `OK (40 assertions)`, no new TaintedSSRF versus baseline\n\n```json:metadata\n{\"files\": [\"FhirOntologyAutocompleteExternalModule.php\", \"README.md\"], \"verifyCommand\": \"php -l FhirOntologyAutocompleteExternalModule.php && php tests/run.php && vendor/bin/psalm --taint-analysis --no-progress\", \"acceptanceCriteria\": [\"CURLOPT_TIMEOUT set from getFhirTimeout()\", \"core http_get/http_post no longer called\", \"every request constrained by isWithinBase()\", \"no new TaintedSSRF versus baseline\", \"TLS values match the maintainer's answer\"], \"modelTier\": \"frontier\", \"blockedOnExternalInput\": true}\n```"
+    },
+    {
+      "id": 8,
+      "subject": "Task 8: Publish to contribution branch, update PR #5",
+      "status": "pending",
+      "blockedBy": [
+        7
+      ],
+      "description": "**Goal:** Put the code-only changes onto upstream-v0.5.2 without any design docs, and bring PR #5 into a mergeable, CI-passing state.\n\n**Files:**\n- No source changes; branch and PR mechanics only\n\n**Acceptance Criteria:**\n- [ ] `upstream-v0.5.2` contains every code commit and NO docs/superpowers/ content\n- [ ] `git diff upstream/main..upstream-v0.5.2 --stat` lists no file under docs/superpowers/\n- [ ] The branch is based on current upstream/main so PR #5 reports mergeable\n- [ ] The PR title is a valid conventional commit and passes the title lint\n- [ ] The PR description drops the v0.5.1/v0.5.2 framing and describes the three fixes\n- [ ] CI is green, or any red is explained and attributable to the known fork-permissions SARIF limitation rather than a real finding\n- [ ] The user explicitly approved the force-push and the new title/body before either was applied\n\n**Verify:** `gh pr view 5 --repo aehrc/redcap_fhir_ontology_provider --json mergeable,statusCheckRollup` -> MERGEABLE, checks passing\n\n```json:metadata\n{\"files\": [], \"verifyCommand\": \"gh pr view 5 --repo aehrc/redcap_fhir_ontology_provider --json mergeable,mergeStateStatus,title\", \"acceptanceCriteria\": [\"no docs/superpowers in the contribution branch\", \"PR reports MERGEABLE\", \"title passes conventional-commit lint\", \"user approved force-push before it ran\"], \"modelTier\": \"standard\", \"requiresUserApproval\": true}\n```"
+    }
+  ],
+  "lastUpdated": "2026-09-04T12:26:32.119841+00:00"
+}
