@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- **`$redirectBase` is fixed for the entire redirect loop.** Every hop is validated against the base the caller originally supplied, **never** against the URL that issued the redirect. Advancing the base per hop would let a chain of individually-in-base redirects walk progressively outside the configured server — the control would look correct and do nothing. This is the single most important invariant in the plan; Task 3 has a dedicated test for it.
+- **`$redirectBase` is fixed for the entire redirect loop.** Every hop is validated against the base the caller originally supplied, **never** against the URL that issued the redirect. Advancing the base per hop to the previous *target* narrows rather than widens (`isWithinBase()` is a strict path-prefix check, so it refuses a hop earlier); advancing it to the target's *origin* drops the path constraint entirely and would follow every hop. Task 3 has a dedicated test for the divergence. (Corrected after review — an earlier draft claimed any advancing base would let redirects walk outside the configured server.)
 - **`$redirectBase === null` means "refuse all redirects."** Used for endpoints admitted by exact match rather than containment (the OAuth token endpoint and the auth endpoint), where no containment base exists.
 - **Hop budget is 10 redirects**, preserving the semantics of the `CURLOPT_MAXREDIRS = 10` being removed. That is 11 total requests (1 initial + 10 redirects).
 - **POST follows only `307`/`308`.** `301`/`302`/`303` in response to a POST are refused, because following them converts the request to a GET and drops the body, changing a FHIR operation's semantics rather than relocating it.
@@ -933,10 +933,10 @@ In `httpGet()`, change the single call site (around line 1078):
 - [ ] **Step 6: Run to verify they pass**
 
 ```bash
-vendor/bin/phpunit --filter 'Redirect|FollowLocation|FakeTransportScript'
+vendor/bin/phpunit --filter 'Redirect|FollowLocation'
 ```
 
-Expected: PASS, including `testFakeTransportScriptDrivesSequentialResponses` from Task 2.
+Expected: PASS.
 
 ```bash
 vendor/bin/phpunit

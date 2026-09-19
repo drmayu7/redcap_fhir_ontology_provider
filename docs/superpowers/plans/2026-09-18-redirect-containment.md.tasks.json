@@ -4,13 +4,13 @@
     {
       "id": 0,
       "subject": "Task 0: Set up branch and green baseline",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** Working on `fix/redirect-containment` off `upstream/main` with dev dependencies installed and the existing suite passing, so later failures are attributable to our changes.\n\n**Files:**\n- No source changes.\n\n**Acceptance Criteria:**\n- [ ] On branch `fix/redirect-containment`, whose merge-base with `upstream/main` is `a5e2b55`\n- [ ] `vendor/bin/phpunit` exists\n- [ ] The full unit suite passes before any change is made, and the pass count is recorded for comparison\n\n**Verify:** `vendor/bin/phpunit` \u2192 `OK` with 0 failures and 0 errors\n\n```json:metadata\n{\"files\": [], \"verifyCommand\": \"vendor/bin/phpunit\", \"acceptanceCriteria\": [\"on fix/redirect-containment based at a5e2b55\", \"vendor/bin/phpunit exists\", \"full unit suite passes as a recorded baseline\"], \"modelTier\": \"mechanical\"}\n```"
     },
     {
       "id": 1,
       "subject": "Task 1: Pure redirect logic in FhirRequestPolicy",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** Add the four pure statics the redirect loops need \u2014 URL resolution, method-aware status rules, and response-header parsing \u2014 with no I/O, so they are testable without REDCap or a network.\n\n**Files:**\n- Modify: `FhirRequestPolicy.php` (add constants and methods inside `class FhirRequestPolicy`)\n- Test: `tests/FhirRequestPolicyTest.php`\n\n**Acceptance Criteria:**\n- [ ] `resolveRedirectTarget()` resolves all four RFC 3986 reference forms and returns `false` for empty, non-string, or non-HTTP(S) results\n- [ ] `mayFollowRedirect()` allows 301/302/303/307/308 for GET but only 307/308 for POST\n- [ ] `statusFromHeaders()` and `locationFromHeaders()` parse a PHP `$http_response_header` array, case-insensitively for the header name\n- [ ] No method performs containment judgement \u2014 that stays with `isWithinBase()`\n- [ ] `MAX_REDIRECTS` is 10\n\n**Verify:** `vendor/bin/phpunit --filter FhirRequestPolicyTest` \u2192 `OK`, with the new tests included\n\n```json:metadata\n{\"files\": [\"FhirRequestPolicy.php\", \"tests/FhirRequestPolicyTest.php\"], \"verifyCommand\": \"vendor/bin/phpunit --filter FhirRequestPolicyTest\", \"acceptanceCriteria\": [\"resolveRedirectTarget handles all four RFC 3986 reference forms and rejects non-HTTP(S)\", \"mayFollowRedirect allows 301/302/303/307/308 for GET but only 307/308 for POST\", \"statusFromHeaders and locationFromHeaders parse $http_response_header case-insensitively\", \"no method performs containment judgement\", \"MAX_REDIRECTS is 10\"], \"modelTier\": \"mechanical\"}\n```",
       "blockedBy": [
         0
@@ -19,7 +19,7 @@
     {
       "id": 2,
       "subject": "Task 2: Scripted response queue in FakeHttpTransport",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** Let tests drive a multi-hop sequence such as `302 \u2192 200`, supplying both `http_code` and `CURLINFO_REDIRECT_URL`, while leaving every existing test's behaviour untouched.\n\n**Files:**\n- Modify: `tests/support/FakeHttpTransport.php`\n- Test: `tests/FhirOntologyAutocompleteExternalModuleTest.php` (one test proving the queue works and the default is unchanged)\n\n**Acceptance Criteria:**\n- [ ] `FakeHttpTransport::$script` accepts an ordered list of `['http_code' => int, 'redirect_url' => string|null, 'body' => string|false]` steps\n- [ ] With no script set, `curl_getinfo()` still reports `['http_code' => 200]` and `curl_exec()` still returns `FakeHttpTransport::$response` \u2014 so existing tests pass unchanged\n- [ ] `curl_getinfo($h, CURLINFO_REDIRECT_URL)` returns the current step's `redirect_url`\n- [ ] `curl_getinfo()` does **not** advance the queue; only `curl_exec()` does\n- [ ] `reset()` clears the script, the cursor and the current step\n\n**Verify:** `vendor/bin/phpunit` \u2192 `OK`, with the Task 0 baseline count still passing\n\n```json:metadata\n{\"files\": [\"tests/support/FakeHttpTransport.php\", \"tests/FhirOntologyAutocompleteExternalModuleTest.php\"], \"verifyCommand\": \"vendor/bin/phpunit --filter FakeTransportWithoutScript\", \"acceptanceCriteria\": [\"$script accepts ordered http_code/redirect_url/body steps\", \"no script set means http_code 200 plus $response, so existing tests pass unchanged\", \"curl_getinfo returns the current step's redirect_url for CURLINFO_REDIRECT_URL\", \"curl_getinfo does not advance the queue\", \"reset() clears script, cursor and current step\"], \"modelTier\": \"mechanical\"}\n```",
       "blockedBy": [
         0
@@ -28,7 +28,7 @@
     {
       "id": 3,
       "subject": "Task 3: Redirect containment on curl GET path",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** `curlGetWithTotalTimeout()` stops letting curl follow redirects and instead approves each hop against the fixed original base, refusing and logging anything off-base \u2014 closing the credential leak on the GET path.\n\n**Files:**\n- Modify: `FhirOntologyAutocompleteExternalModule.php` \u2014 `httpGet()` (from line 1063), `curlGetWithTotalTimeout()` (from line 1132), and a new `approveRedirect()` helper\n- Modify: `tests/support/FakeHttpTransport.php` \u2014 record `CURLOPT_FOLLOWLOCATION` in `recordCall()`\n- Test: `tests/FhirOntologyAutocompleteExternalModuleTest.php`\n\n**Acceptance Criteria:**\n- [ ] After an off-base `302`, exactly **one** HTTP call is made and no call carries the `Authorization` header to the off-base host\n- [ ] An in-base `302` is followed and the second call carries the same headers\n- [ ] The base does not advance: `base/a \u2192 base/b \u2192 off-base/c` is refused at the third hop\n- [ ] 11 chained in-base redirects are refused rather than followed indefinitely\n- [ ] A refused redirect does not increment the circuit breaker's failure count\n- [ ] `CURLOPT_FOLLOWLOCATION` is `false`; `CURLOPT_AUTOREFERER` and `CURLOPT_MAXREDIRS` are gone\n- [ ] The `string|false|null` return contract is unchanged\n\n**Verify:** `vendor/bin/phpunit --filter FhirOntologyAutocompleteExternalModuleTest` \u2192 `OK`\n\n```json:metadata\n{\"files\": [\"FhirOntologyAutocompleteExternalModule.php\", \"tests/support/FakeHttpTransport.php\", \"tests/FhirOntologyAutocompleteExternalModuleTest.php\"], \"verifyCommand\": \"vendor/bin/phpunit --filter FhirOntologyAutocompleteExternalModuleTest\", \"acceptanceCriteria\": [\"off-base 302 yields exactly one call and no Authorization header reaches the off-base host\", \"in-base 302 is followed with headers intact\", \"base does not advance with the hops\", \"chain capped at MAX_REDIRECTS\", \"refused redirect does not open the circuit breaker\", \"CURLOPT_FOLLOWLOCATION false and AUTOREFERER/MAXREDIRS removed\", \"string|false|null return contract unchanged\"], \"modelTier\": \"standard\"}\n```",
       "blockedBy": [
         1,
@@ -38,7 +38,7 @@
     {
       "id": 4,
       "subject": "Task 4: Redirect containment on curl POST path",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** Apply the same loop to `curlPostWithTotalTimeout()`, with POST's stricter status rules, and refuse redirects outright for the OAuth token and auth endpoints, which are admitted by exact match rather than containment.\n\n**Files:**\n- Modify: `FhirOntologyAutocompleteExternalModule.php` \u2014 `httpPost()` (from line 1172) and `curlPostWithTotalTimeout()` (from line 1268)\n- Test: `tests/FhirOntologyAutocompleteExternalModuleTest.php`\n\n**Acceptance Criteria:**\n- [ ] A `307` on the FHIR POST path is followed in-base with method and body intact\n- [ ] A `302` on the FHIR POST path is refused rather than degraded to a GET\n- [ ] An off-base `307` on the FHIR POST path is refused, and no call reaches the off-base host\n- [ ] A redirect from the token endpoint is refused even when it would look in-base\n- [ ] A redirect from the auth endpoint (`$baseOverride` supplied) is refused\n- [ ] `string|false|null` return contract unchanged\n\n**Verify:** `vendor/bin/phpunit --filter 'PostRedirect|TokenEndpointRedirect'` \u2192 `OK`\n\n```json:metadata\n{\"files\": [\"FhirOntologyAutocompleteExternalModule.php\", \"tests/FhirOntologyAutocompleteExternalModuleTest.php\"], \"verifyCommand\": \"vendor/bin/phpunit --filter 'PostRedirect|TokenEndpointRedirect'\", \"acceptanceCriteria\": [\"307 followed in-base with method and body intact\", \"302 on POST refused rather than degraded to GET\", \"off-base 307 refused with no call to the off-base host\", \"token endpoint redirect refused even when it looks in-base\", \"auth endpoint redirect with baseOverride refused\", \"string|false|null return contract unchanged\"], \"modelTier\": \"standard\"}\n```",
       "blockedBy": [
         3
@@ -47,7 +47,7 @@
     {
       "id": 5,
       "subject": "Task 5: Redirect containment on fallback paths",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** Close the same leak on the curl-less path, where PHP's `follow_location` defaults to `1`, using the pure resolver and header parsers from Task 1 so behaviour matches the curl path.\n\n**Files:**\n- Modify: `FhirOntologyAutocompleteExternalModule.php` \u2014 the `file_get_contents` fallback in `httpGet()` (from line 1088) and in `httpPost()` (from line 1210)\n- Test: `tests/FhirOntologyAutocompleteExternalModuleTest.php`\n\n**Acceptance Criteria:**\n- [ ] Both fallbacks set `'follow_location' => 0` in the stream context (asserted by test)\n- [ ] Both fallbacks route their redirect decision through the same\n      `FhirRequestPolicy::mayFollowRedirect()` + `approveRedirect()` pair used by the curl\n      paths, with the same fixed `$redirectBase` \u2014 so the token-endpoint rule, the\n      base-does-not-advance invariant and the `MAX_REDIRECTS` budget hold by construction\n      (asserted by code review, not by an end-to-end test \u2014 see the coverage note)\n- [ ] Proxy handling is preserved byte-for-byte through the extracted helper, with no\n      pre-existing test regressing\n\n**Coverage note \u2014 state this honestly in the PR.** The end-to-end fallback redirect\nbehaviour is **not** covered by an automated test. The suite fakes curl by shadowing\n`curl_*` in the module's namespace, but the fallback goes through PHP's http stream\nwrapper and reads the magic `$http_response_header`, which a shadowed function cannot\npopulate in the caller's scope. What *is* proven: `follow_location => 0` is set, and every\ndecision the loop makes is made by functions covered in Tasks 1 and 3. Do not claim this\npath is test-covered \u2014 this module was reviewed once already for overstating what its\ntests demonstrate.\n\n**Verify:** `vendor/bin/phpunit --filter Fallback` \u2192 `OK`, and `vendor/bin/phpunit` \u2192 `OK` with no pre-existing test regressed\n\n```json:metadata\n{\"files\": [\"FhirOntologyAutocompleteExternalModule.php\", \"tests/FhirOntologyAutocompleteExternalModuleTest.php\"], \"verifyCommand\": \"vendor/bin/phpunit --filter Fallback\", \"acceptanceCriteria\": [\"both fallbacks set follow_location => 0, asserted by test\", \"both fallbacks route decisions through mayFollowRedirect() and approveRedirect() with the same fixed redirectBase\", \"proxy handling preserved through the extracted helper with no pre-existing test regressing\", \"PR states plainly that end-to-end fallback redirect behaviour is not test-covered and why\"], \"modelTier\": \"standard\"}\n```",
       "blockedBy": [
         3,
@@ -57,7 +57,7 @@
     {
       "id": 6,
       "subject": "Task 6: Correct stale docblock and README claims",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** Make the documentation describe what the code now does \u2014 the `isWithinBase()` caveat that attributes redirect-following to REDCap core, and the README claim that the module's curl copy is kept close to core's option set.\n\n**Files:**\n- Modify: `FhirRequestPolicy.php` \u2014 `isWithinBase()` docblock\n- Modify: `README.md` \u2014 the \"Security and performance fixes\" section\n\n**Acceptance Criteria:**\n- [ ] `isWithinBase()`'s docblock no longer claims redirect-following is outside what the module checks\n- [ ] It still names DNS rebinding as genuinely out of scope\n- [ ] README no longer claims the curl copy is kept close to core's option set without qualification\n- [ ] README documents that off-base redirects are refused, and that `SSL_VERIFYPEER` remains core's behaviour\n- [ ] No claim is made about DNS rebinding or TLS verification being fixed\n\n**Verify:** `vendor/bin/phpunit && grep -c 'follow HTTP redirects' FhirRequestPolicy.php` \u2192 `OK` then `0`\n\n```json:metadata\n{\"files\": [\"FhirRequestPolicy.php\", \"README.md\"], \"verifyCommand\": \"vendor/bin/phpunit && grep -c 'follow HTTP redirects' FhirRequestPolicy.php\", \"acceptanceCriteria\": [\"isWithinBase docblock no longer claims redirects are unchecked\", \"DNS rebinding still named as out of scope\", \"README no longer claims unqualified core option-set parity\", \"README documents off-base redirect refusal and unchanged SSL_VERIFYPEER\", \"no claim that DNS rebinding or TLS verification is fixed\"], \"modelTier\": \"mechanical\"}\n```",
       "blockedBy": [
         3,
@@ -66,5 +66,5 @@
       ]
     }
   ],
-  "lastUpdated": "2026-09-18T07:39:52.661152+00:00"
+  "lastUpdated": "2026-09-19T10:52:57.351441+00:00"
 }

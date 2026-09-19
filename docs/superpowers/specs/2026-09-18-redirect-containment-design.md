@@ -104,11 +104,18 @@ In both `curlGetWithTotalTimeout()` and `curlPostWithTotalTimeout()`:
   return `false`. In-base: re-issue the request against it, carrying the same headers.
 
 **`$base` is fixed for the whole loop.** Every hop is validated against the base the
-caller originally supplied — the configured FHIR server, or the `$baseOverride` — and
-**never** against the URL that issued the redirect. Advancing the base with each hop
-would let a chain of individually-in-base redirects walk progressively outside the
-configured server, defeating the entire control. This is the single most important
-implementation detail in this design.
+caller originally supplied — the configured FHIR server, or a `$baseOverride` that is a
+genuine containment boundary rather than the URL itself — and
+**never** against the URL that issued the redirect.
+
+Corrected after implementation review: an earlier draft of this spec claimed a base that
+advanced with the chain would let redirects walk progressively outside the configured
+server. That is wrong. `isWithinBase()` is a strict path-prefix check, so a base advanced
+to the previous *target* can only ever narrow subsequent checks — it refuses one hop
+earlier rather than permitting more. The invariant still matters, but for a different
+failure: a base advanced to the target's *origin* drops the path constraint entirely
+(`$basePath` becomes `''`, which `isWithinBase()` accepts unconditionally) and would
+follow every hop. That is the case the guarding test must catch, and does.
 
 On the `file_get_contents` fallback in both `httpGet()` and `httpPost()`:
 
